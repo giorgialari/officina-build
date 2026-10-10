@@ -10,7 +10,8 @@ codice, nuovo, elenco = sys.argv[1:4]
 def git(*a):
     return subprocess.run(["git", "-C", codice, *a], capture_output=True, text=True).stdout.strip()
 corrente = git("show", f"{nuovo}:VERSION").strip()
-costruzioni = [{"nome": "nuovo", "riferimento": nuovo}]
+sha_nuovo = git("rev-parse", nuovo) or git("rev-parse", "origin/" + nuovo) or nuovo
+costruzioni = [{"nome": "nuovo", "riferimento": sha_nuovo}]
 collaudi = []
 visti = set()
 for v in [x.strip() for x in elenco.split(",") if x.strip()]:

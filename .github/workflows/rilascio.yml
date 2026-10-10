@@ -26,7 +26,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   versioni:
-    name: Le versioni di prima da collaudare
+    name: Versioni di prima da collaudare
     runs-on: ubuntu-24.04
     outputs:
       matrice: ${{ steps.v.outputs.matrice }}
@@ -52,31 +52,23 @@ jobs:
       riferimento: ${{ inputs.riferimento }}
     secrets: inherit
   win-chiavi:
-    name: Chiave di prova
+    name: Windows · chiave di prova
     runs-on: ubuntu-24.04
     outputs:
       pubblica: ${{ steps.k.outputs.pubblica }}
     steps:
+    - uses: actions/checkout@v4
     - id: k
+      name: Chiave di prova (fissa, nel repo)
       run: |
-        pip install --quiet cryptography
-        python - <<'PY'
-        import base64, os
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-        k = Ed25519PrivateKey.generate()
-        pem = k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
-        open("chiave-privata.pem", "wb").write(pem)
-        pub = k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-        open(os.environ["GITHUB_OUTPUT"], "a").write("pubblica=" + base64.urlsafe_b64encode(pub).decode().rstrip("=") + "\n")
-        PY
+        echo "pubblica=$(cat chiave-prova/pubblica.txt)" >> "$GITHUB_OUTPUT"
     - uses: actions/upload-artifact@v4
       with:
         name: chiave-prova
-        path: chiave-privata.pem
+        path: chiave-prova/chiave-privata.pem
         retention-days: 1
   win-costruisci:
-    name: Costruisce ${{ matrix.nome }}
+    name: Windows · costruisce ${{ matrix.nome }}
     needs:
     - win-chiavi
     - versioni
@@ -93,10 +85,18 @@ jobs:
       run:
         shell: bash
     steps:
+    - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
         name: chiave-prova
         path: chiave
+    - id: inst
+      name: 'Installer di questa versione gia'' costruito? (cache: una versione uscita non cambia)'
+      if: ${{ matrix.nome != 'nuovo' }}
+      uses: actions/cache@v4
+      with:
+        path: pronto
+        key: inst-win-${{ matrix.riferimento }}-${{ hashFiles('chiave-prova/pubblica.txt') }}-v1
     - name: Codice (copia di sola lettura, chiave dedicata)
       env:
         CODICE_CHIAVE: ${{ secrets.CODICE_CHIAVE }}
@@ -111,6 +111,12 @@ jobs:
         git -C codice checkout --quiet "$RIFERIMENTO"
         rm -f ~/.ssh/codice
         echo "Codice: $(git -C codice rev-parse --short HEAD), versione $(cat codice/VERSION)"
+    - name: Pezzi scaricati e runtime di base (cache)
+      if: ${{ matrix.nome == 'nuovo' }}
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.AI_BRAIN_VENDOR }}
+        key: vendor-inst-win-${{ hashFiles('codice/deploy/comune/versions.env', 'codice/backend/requirements*.txt', 'codice/deploy/comune/requirements-*.txt') }}-v1
     - name: Chiave pubblica di prova al posto di quella vera
       env:
         PUBBLICA: ${{ needs.win-chiavi.outputs.pubblica }}
@@ -119,6 +125,7 @@ jobs:
           [ -f "$f" ] && sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
         done
         grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
     - name: Modelli della ricerca (gli stessi dell'immagine del server, scaricati qui)
       shell: powershell
       working-directory: codice
@@ -133,6 +140,7 @@ jobs:
         $env:PYTHONPATH = (Get-Location).Path
         python scripts\download_models.py
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
     - name: App e impronte
       shell: powershell
       working-directory: codice
@@ -140,6 +148,7 @@ jobs:
         $ErrorActionPreference = 'Continue'
         powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 all
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
     - name: Firma con la chiave di prova e installer
       shell: powershell
       working-directory: codice
@@ -152,14 +161,19 @@ jobs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 installer
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+    - name: L'installer nella cartella «pronto» (cache e allegato)
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      shell: bash
+      run: mkdir -p pronto && cp codice/deploy/dist/AI-Brain-*-windows-x64.exe pronto/
     - uses: actions/upload-artifact@v4
       with:
         name: installer-${{ matrix.nome }}
-        path: codice/deploy/dist/AI-Brain-*-windows-x64.exe
+        path: pronto/*.exe
         retention-days: 1
         compression-level: 0
   win-collauda:
-    name: Installa, aggiorna e controlla ${{ matrix.vecchia }}
+    name: Windows · aggiorna da ${{ matrix.vecchia }}
     needs:
     - win-costruisci
     - versioni
@@ -221,30 +235,23 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.versioni.outputs.collaudi) }}
   mac-chiavi:
-    name: Chiave di prova
+    name: Mac · chiave di prova
     runs-on: ubuntu-24.04
     outputs:
       pubblica: ${{ steps.k.outputs.pubblica }}
     steps:
+    - uses: actions/checkout@v4
     - id: k
+      name: Chiave di prova (fissa, nel repo)
       run: |
-        pip install --quiet cryptography
-        python - <<'PY'
-        import base64, os
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-        k = Ed25519PrivateKey.generate()
-        open("chiave-privata.pem", "wb").write(k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-        pub = k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-        open(os.environ["GITHUB_OUTPUT"], "a").write("pubblica=" + base64.urlsafe_b64encode(pub).decode().rstrip("=") + "\n")
-        PY
+        echo "pubblica=$(cat chiave-prova/pubblica.txt)" >> "$GITHUB_OUTPUT"
     - uses: actions/upload-artifact@v4
       with:
         name: chiave-prova-mac
-        path: chiave-privata.pem
+        path: chiave-prova/chiave-privata.pem
         retention-days: 1
   mac-costruisci:
-    name: Costruisce ${{ matrix.nome }}
+    name: Mac · costruisce ${{ matrix.nome }}
     needs:
     - mac-chiavi
     - versioni
@@ -264,10 +271,23 @@ jobs:
       with:
         name: chiave-prova-mac
         path: chiave
+    - id: inst
+      name: 'Installer di questa versione gia'' costruito? (cache: una versione uscita non cambia)'
+      if: ${{ matrix.nome != 'nuovo' }}
+      uses: actions/cache@v4
+      with:
+        path: pronto
+        key: inst-mac-${{ matrix.riferimento }}-${{ hashFiles('chiave-prova/pubblica.txt') }}-v1
     - uses: ./.github/actions/codice
       with:
         riferimento: ${{ matrix.riferimento }}
         chiave: ${{ secrets.CODICE_CHIAVE }}
+    - name: Pezzi scaricati e runtime di base (cache)
+      if: ${{ matrix.nome == 'nuovo' }}
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.AI_BRAIN_VENDOR }}
+        key: vendor-inst-mac-${{ hashFiles('codice/deploy/comune/versions.env', 'codice/backend/requirements*.txt', 'codice/deploy/comune/requirements-*.txt') }}-v1
     - name: Chiave pubblica di prova al posto di quella vera
       env:
         PUBBLICA: ${{ needs.mac-chiavi.outputs.pubblica }}
@@ -276,24 +296,35 @@ jobs:
           [ -f "$f" ] && sed -i '' "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
         done
         grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
     - name: Node (quello dell'app) e pagine
       run: |
         NODE=$(grep '^NODE_VERSION=' codice/deploy/comune/versions.env | cut -d= -f2 | tr -d v)
         echo "NODE=$NODE" >> "$GITHUB_ENV"
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE }}
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
     - name: Pagine
-      run: scripts/riservato.sh pagine codice 'built|Successfully|error' -- bash deploy/comune/pagine.sh "$RUNNER_TEMP/pagine"
+      run: |
+        if [ -f codice/deploy/comune/pagine.sh ]; then
+          scripts/riservato.sh pagine codice 'built|Successfully|error' -- bash deploy/comune/pagine.sh "$RUNNER_TEMP/pagine"
+        else
+          echo "Questa versione non ha pagine.sh: la pagina la costruisce lo script del dmg"
+        fi
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
     - name: uv (lo usa lo script del dmg per Python)
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
         test -x "$HOME/.local/bin/uv" && echo "uv pronto"
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
     - name: Modelli della ricerca
       run: |
         python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
         M="$AI_BRAIN_VENDOR/common/models"; mkdir -p "$M"
         cd codice && FASTEMBED_CACHE_PATH="$M" HF_HOME="$M/huggingface" HF_HUB_DISABLE_XET=1 PYTHONPATH="$PWD" python3 scripts/download_models.py > /dev/null 2>&1
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
     - name: Il dmg (firmato con la chiave di prova)
       env:
         AI_BRAIN_CHIAVE_LICENZE: ${{ github.workspace }}/chiave/chiave-privata.pem
@@ -301,14 +332,18 @@ jobs:
       run: |
         pip3 install --quiet --break-system-packages cryptography 2>/dev/null || pip3 install --quiet cryptography
         # Le versioni di prima cercano la chiave sempre nello stesso posto: ce la mettiamo (quella di prova, di questa corsa)
+        [ -d "$RUNNER_TEMP/pagine" ] || unset AI_BRAIN_PAGINE
         mkdir -p "$HOME/.config/ai-brain-licenze" && cp "$AI_BRAIN_CHIAVE_LICENZE" "$HOME/.config/ai-brain-licenze/chiave-privata.pem"
         scripts/riservato.sh dmg codice 'dmg|Pronto' -- bash deploy/mac/build-mac.sh release
-    - name: Il dmg in una cartella della corsa
-      run: mkdir -p uscita && cp "$AI_BRAIN_DIST"/AI-Brain-*-mac-arm64.dmg uscita/
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+    - name: L'installer nella cartella «pronto» (cache e allegato)
+      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      shell: bash
+      run: mkdir -p pronto && cp "$AI_BRAIN_DIST"/AI-Brain-*-mac-arm64.dmg pronto/
     - uses: actions/upload-artifact@v4
       with:
         name: dmg-${{ matrix.nome }}
-        path: uscita/*.dmg
+        path: pronto/*.dmg
         retention-days: 1
         compression-level: 0
     - name: Dettaglio cifrato (solo se rosso)
@@ -322,7 +357,7 @@ jobs:
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
   mac-collauda:
-    name: Installa, aggiorna dall'app e controlla ${{ matrix.vecchia }}
+    name: Mac · aggiorna da ${{ matrix.vecchia }}
     needs:
     - mac-costruisci
     - versioni
@@ -367,7 +402,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.versioni.outputs.collaudi) }}
   srv-server:
-    name: Il server su una macchina pulita
+    name: Server · installa e aggiorna
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -383,6 +418,22 @@ jobs:
         riferimento: ${{ needs.versioni.outputs.primo }}
         chiave: ${{ secrets.CODICE_CHIAVE }}
         cartella: codice-vecchio
+    - uses: actions/download-artifact@v4
+      with:
+        name: chiave-prova
+        path: chiave
+    - name: Chiave pubblica di prova al posto di quella vera (nel codice nuovo e in quello di prima)
+      env:
+        PUBBLICA: ${{ needs.win-chiavi.outputs.pubblica }}
+      run: |
+        for c in codice codice-vecchio; do for f in $c/backend/app/integrita.py $c/backend/app/licenza.py; do [ -f "$f" ] && sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"; done; done
+        grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
+    - name: Licenza del server (firmata con la chiave di prova)
+      run: |
+        pip install --quiet cryptography
+        mkdir -p ~/.config/ai-brain-licenze && cp chiave/chiave-privata.pem ~/.config/ai-brain-licenze/chiave-privata.pem
+        PYTHONPATH="$PWD/codice" python3 -c "import sys; sys.path.insert(0, 'codice/backend/app'); import licenza; print(licenza.issue('Collaudo server', '', '', '', licenza.PRIVATE_KEY_FILE, tipo='server'))" > "$RUNNER_TEMP/licenza-server.txt"
+        test -s "$RUNNER_TEMP/licenza-server.txt" && echo "licenza del server creata"
     - name: Immagine nuova (costruita dal codice)
       run: |
         V=$(cat codice/VERSION)
@@ -404,7 +455,19 @@ jobs:
         BRAIN_TOKEN=$(openssl rand -hex 24)
         MEILI_KEY=$(openssl rand -hex 24)
         EOF
-        scripts/riservato.sh accensione codice/deploy/server 'Started|Healthy|running' -- docker compose -f docker-compose.yml up -d grafo ricerca brain
+        cat > codice/deploy/server/ambiente.yml <<EOF
+        services:
+          brain:
+            environment:
+              AI_BRAIN_LICENSE_CHECK_URL: http://127.0.0.1:9/controlla
+              AI_BRAIN_LICENSE_URL: http://127.0.0.1:9/attiva
+        EOF
+        cd codice/deploy/server
+        C='docker compose -f docker-compose.yml -f ambiente.yml'
+        $C up -d grafo ricerca > /dev/null 2>&1
+        $C up --no-start brain > /dev/null 2>&1
+        $C cp "$RUNNER_TEMP/licenza-server.txt" brain:/data/licenza.txt
+        $GITHUB_WORKSPACE/scripts/riservato.sh accensione . 'Started|Healthy|running' -- $C up -d brain
         for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8765/health > /dev/null 2>&1 && break; sleep 5; done
     - name: Lo provo come una persona
       run: scripts/prova-server.sh codice/deploy/server scrivi
@@ -412,18 +475,18 @@ jobs:
       if: ${{ needs.versioni.outputs.primo != '' }}
       run: |
         cd codice/deploy/server
-        docker compose -f docker-compose.yml stop brain > /dev/null 2>&1
+        docker compose -f docker-compose.yml -f ambiente.yml stop brain > /dev/null 2>&1
         sed -i "s/^AI_BRAIN_VERSION=.*/AI_BRAIN_VERSION=$V/" .env
-        ../../../scripts/riservato.sh aggiornamento . 'Started|Healthy|running' -- docker compose -f docker-compose.yml up -d brain
+        ../../../scripts/riservato.sh aggiornamento . 'Started|Healthy|running' -- docker compose -f docker-compose.yml -f ambiente.yml up -d brain
     - name: Dopo l'aggiornamento o il riavvio le memorie ci sono ancora
       run: |
-        if [ -z "${VV:-}" ]; then (cd codice/deploy/server && docker compose -f docker-compose.yml restart brain > /dev/null); fi
+        if [ -z "${VV:-}" ]; then (cd codice/deploy/server && docker compose -f docker-compose.yml -f ambiente.yml restart brain > /dev/null); fi
         scripts/prova-server.sh codice/deploy/server verifica
     - name: Dettaglio cifrato (solo se rosso)
       if: failure()
       run: |
         mkdir -p "$RUNNER_TEMP/riservato"
-        cd codice/deploy/server && docker compose -f docker-compose.yml logs --no-color --tail 300 > "$RUNNER_TEMP/riservato/server.log" 2>&1 || true
+        cd codice/deploy/server && docker compose -f docker-compose.yml -f ambiente.yml logs --no-color --tail 300 > "$RUNNER_TEMP/riservato/server.log" 2>&1 || true
         cd "$GITHUB_WORKSPACE" && scripts/cifra.sh
     - if: failure()
       uses: actions/upload-artifact@v4
@@ -433,8 +496,9 @@ jobs:
         retention-days: 3
     needs:
     - versioni
+    - win-chiavi
   windows:
-    name: Windows (firmato)
+    name: Rilascio · Windows firmato
     needs:
     - esito-collaudi
     runs-on: windows-latest
@@ -510,7 +574,7 @@ jobs:
         retention-days: 3
     if: ${{ !inputs.solo_collaudo && needs.esito-collaudi.result == 'success' }}
   mac:
-    name: Mac (firmato)
+    name: Rilascio · Mac firmato
     needs:
     - esito-collaudi
     runs-on: macos-14
@@ -531,7 +595,12 @@ jobs:
       with:
         node-version: ${{ env.NODE }}
     - name: Pagine
-      run: scripts/riservato.sh pagine codice 'built|Successfully|error' -- bash deploy/comune/pagine.sh "$RUNNER_TEMP/pagine"
+      run: |
+        if [ -f codice/deploy/comune/pagine.sh ]; then
+          scripts/riservato.sh pagine codice 'built|Successfully|error' -- bash deploy/comune/pagine.sh "$RUNNER_TEMP/pagine"
+        else
+          echo "Questa versione non ha pagine.sh: la pagina la costruisce lo script del dmg"
+        fi
     - name: uv (lo usa lo script del dmg per Python)
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
@@ -572,7 +641,7 @@ jobs:
         retention-days: 3
     if: ${{ !inputs.solo_collaudo && needs.esito-collaudi.result == 'success' }}
   server:
-    name: Immagine server ${{ matrix.arch }} (firmata)
+    name: Rilascio · immagine server ${{ matrix.arch }} firmata
     needs:
     - esito-collaudi
     strategy:
@@ -638,7 +707,7 @@ jobs:
         compression-level: 0
     if: ${{ !inputs.solo_collaudo && needs.esito-collaudi.result == 'success' }}
   pronto:
-    name: Pronto da pubblicare
+    name: Rilascio · pronto da pubblicare
     needs:
     - windows
     - mac
@@ -650,12 +719,13 @@ jobs:
         echo "Per metterli online, sul tuo Mac: scripts/scarica-e-pubblica.sh ${{ github.run_id }} <cartella di ai-brain>"
     if: ${{ !inputs.solo_collaudo }}
   esito-collaudi:
-    name: Tutti i collaudi verdi
+    name: Esito di tutti i collaudi
     needs:
     - prove
     - win-collauda
     - mac-collauda
     - srv-server
+    - licenza-vera
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     steps:
@@ -663,3 +733,23 @@ jobs:
         ESITI: ${{ toJSON(needs) }}
       run: |
         echo "$ESITI" | python3 -c "import json,sys; n=json.load(sys.stdin); ko=[k for k,v in n.items() if v['result'] not in ('success','skipped')]; print('Collaudi rossi:', ', '.join(ko)) if ko else print('Prove e collaudi di Windows, Mac e server riusciti.'); sys.exit(1 if ko else 0)"
+  licenza-vera:
+    name: Licenza · attivazione con l'email e controllo periodico (servizio vero)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ inputs.riferimento }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+    - name: Attivazione, controllo e liberazione del posto con una licenza di collaudo
+      env:
+        EMAIL_COLLAUDO: ${{ secrets.LICENZA_COLLAUDO_EMAIL }}
+        EMAIL_SCADUTA: ${{ secrets.LICENZA_SCADUTA_EMAIL }}
+        EMAIL_BLOCCATA: ${{ secrets.LICENZA_BLOCCATA_EMAIL }}
+        EMAIL_SERVER: ${{ secrets.LICENZA_SERVER_EMAIL }}
+      run: |
+        if [ -z "$EMAIL_COLLAUDO" ]; then echo "::warning::Manca il segreto LICENZA_COLLAUDO_EMAIL: salto il collaudo con il servizio vero"; exit 0; fi
+        pip install --quiet cryptography
+        python3 scripts/licenza-vera.py codice

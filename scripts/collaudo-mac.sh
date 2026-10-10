@@ -8,6 +8,19 @@ KO=0
 ok()   { echo "  OK   $1"; }
 male() { echo "  MALE $1"; KO=$((KO+1)); }
 controlla() { if [ "$1" = 0 ]; then ok "$2"; else male "$2"; fi; }
+# Un passo da cui dipende tutto il resto: se fallisce il collaudo si ferma qui, con i dettagli cifrabili.
+richiedi() {
+  if [ "$1" = 0 ]; then ok "$2"; return 0; fi
+  male "$2"
+  echo "  STOP il collaudo si ferma qui: senza questo passo il resto non ha senso"
+  mkdir -p "$RUNNER_TEMP/riservato"
+  for l in "$RUNNER_TEMP"/app-*.log; do [ -f "$l" ] && { echo "--- $l"; tail -80 "$l"; } >> "$RUNNER_TEMP/riservato/dettagli.log"; done
+  for d in "$HOME/Library/Application Support/AI Brain" "$HOME/Library/Application Support/Memdoria"; do
+    [ -f "$d/logs/launcher.log" ] && { echo "--- $d"; tail -80 "$d/logs/launcher.log"; } >> "$RUNNER_TEMP/riservato/dettagli.log"
+  done
+  echo "COLLAUDO FALLITO ($KO controlli)"
+  exit 1
+}
 say() { printf '\n=== %s\n' "$1"; }
 
 export AI_BRAIN_LICENSE_CHECK_URL=http://127.0.0.1:9/controlla AI_BRAIN_LICENSE_URL=http://127.0.0.1:9/attiva
@@ -47,7 +60,7 @@ licenza() {  # <app> <cartella dati>
   mkdir -p "$HOME/.config/ai-brain-licenze" "$dati"
   cp "$CHIAVE" "$HOME/.config/ai-brain-licenze/chiave-privata.pem"
   python3 "$CODICE/backend/app/licenza.py" nuova --nome Collaudo --email collaudo@example.invalid --computer "$codice" --mesi 1 | tail -1 | tr -d '\n' > "$dati/licenza.txt"
-  head -c 5 "$dati/licenza.txt" | grep -q 'AIB1\.' ; controlla $? "licenza di prova creata"
+  head -c 5 "$dati/licenza.txt" | grep -q 'AIB1\.' ; richiedi $? "licenza di prova creata"
 }
 
 accendi() { nohup "$1" > "$RUNNER_TEMP/app-$2.log" 2>&1 & }
@@ -102,10 +115,11 @@ monta_e_copia "$NUOVO" "Memdoria.app"; controlla $? "Memdoria.app copiata in App
 DATI="$SUPPORTO/Memdoria"
 licenza /Applications/Memdoria.app "$DATI"
 accendi /Applications/Memdoria.app/Contents/MacOS/Memdoria nuova
-aspetta_lettura "$DATI"; controlla $? "la prima lettura finisce senza errori"
+aspetta_lettura "$DATI"; richiedi $? "la prima lettura finisce senza errori"
 C=$(conta "$DATI" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate: ${C:-0} (attese almeno 3)"
 E=$(conta "$DATI" active_entities); [ "${E:-0}" -ge 1 ]; controlla $? "il grafo si riempie: ${E:-0} entita"
 [ ! -e "$SUPPORTO/AI Brain" ]; controlla $? "nessuna cartella AI Brain in un'installazione nuova"
+"/Applications/Memdoria.app/Contents/Resources/runtime/python/bin/python3.12" -E -s "$(dirname "$0")/licenze-offline.py" "/Applications/Memdoria.app/Contents/Resources/runtime/app" "$CHIAVE"; controlla $? "gli stati della licenza (manca, giusta, scaduta, altro computer, firma rovinata) sull'app installata"
 collega_ai "$DATI"; controlla $? "collega le AI: la voce di Memdoria compare nei file di Claude Code"
 lingua_si_cambia "$DATI"; controlla $? "il cambio lingua (inglese e di nuovo italiano) si salva"
 # Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti)
@@ -130,39 +144,48 @@ rm -rf /Applications/Memdoria.app "$DATI"
 fi
 
 say "B. Aggiornamento dall'app dalla versione di prima"
-monta_e_copia "$VECCHIO" "AI Brain.app"; controlla $? "AI Brain.app (versione di prima) copiata"
-DATI_V="$SUPPORTO/AI Brain"
-licenza "/Applications/AI Brain.app" "$DATI_V"
+# Fino alla 1.0.30 l'app si chiama «AI Brain» e i dati stanno in «AI Brain» (al primo avvio nuovo si traslocano in «Memdoria»);
+# dalla 1.0.31 sono gia' «Memdoria»: non c'e' trasloco da controllare.
+VER_V=$(basename "$VECCHIO" | sed -E 's/^AI-Brain-([0-9.]+)-.*/\1/')
+if [ "$VER_V" != "1.0.31" ] && [ "$(printf '%s\n%s\n' "$VER_V" 1.0.31 | sort -V | head -1)" = "$VER_V" ]; then SEPARATA=1; NOME_V="AI Brain"; else SEPARATA=0; NOME_V="Memdoria"; fi
+APP_V="/Applications/$NOME_V.app"
+DATI_V="$SUPPORTO/$NOME_V"
+monta_e_copia "$VECCHIO" "$NOME_V.app"; controlla $? "$NOME_V.app (versione $VER_V) copiata"
+licenza "$APP_V" "$DATI_V"
 # La versione di prima guarda l'elenco delle versioni in questo file, firmato con la chiave di prova.
 mkdir -p "$RUNNER_TEMP/feed"
 cp "$NUOVO" "$RUNNER_TEMP/feed/"
 VERSIONE_NUOVA=$(cat "$CODICE/VERSION")
 python3 "$(dirname "$0")/feed.py" "$CODICE" "$CHIAVE" "$RUNNER_TEMP/feed/ultima-versione.json" "$VERSIONE_NUOVA" mac "$RUNNER_TEMP/feed/$(basename "$NUOVO")" "file://$RUNNER_TEMP/feed/$(basename "$NUOVO")"
 export AI_BRAIN_UPDATES_URL="file://$RUNNER_TEMP/feed/ultima-versione.json"
-accendi "/Applications/AI Brain.app/Contents/MacOS/AI Brain" vecchia
-aspetta_lettura "$DATI_V"; controlla $? "la versione di prima finisce la lettura"
+accendi "$APP_V/Contents/MacOS/$NOME_V" vecchia
+aspetta_lettura "$DATI_V"; richiedi $? "la versione $VER_V finisce la lettura"
 api "$DATI_V" POST /admin/remember '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
 api "$DATI_V" POST /admin/remember '{"text":"Il server di Verdi Srl e in Hetzner a Norimberga.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
 PRIMA=$(conta "$DATI_V" memories); [ "${PRIMA:-0}" -ge 2 ]; controlla $? "memorie salvate prima dell'aggiornamento: ${PRIMA:-0}"
-collega_ai "$DATI_V"; controlla $? "la versione di prima ha collegato le AI"
-sleep 30
+if collega_ai "$DATI_V"; then HA_VOCI=1; ok "la versione $VER_V ha collegato le AI"; else HA_VOCI=0; echo "  --   la versione $VER_V non ha collegato le AI da sola (probabile conferma a schermo): salto i controlli sulle voci dopo l'aggiornamento"; fi
+sleep 10
 echo aggiorna > "$DATI_V/aggiorna.request"
 # l'app scarica, installa, si spegne e si riapre da sola: si aspetta la versione nuova
+plist="$APP_V/Contents/Info.plist"
 for i in $(seq 1 60); do
   sleep 10
-  plist="/Applications/AI Brain.app/Contents/Info.plist"
   [ -f "$plist" ] && grep -q "<string>$VERSIONE_NUOVA</string>" "$plist" && break
 done
-grep -q "<string>$VERSIONE_NUOVA</string>" "/Applications/AI Brain.app/Contents/Info.plist"; controlla $? "l'app e' stata sostituita dalla $VERSIONE_NUOVA"
+grep -q "<string>$VERSIONE_NUOVA</string>" "$plist"; controlla $? "l'app e' stata sostituita dalla $VERSIONE_NUOVA"
 DATI_N="$SUPPORTO/Memdoria"
-for i in $(seq 1 30); do pgrep -f "AI Brain.app/Contents/Resources/runtime/python.*tray.py" > /dev/null && break; sleep 10; done
-pgrep -f "tray.py" > /dev/null || { echo "  (l'app non si e' riaperta da sola: la accendo come farebbe la persona)"; accendi "/Applications/AI Brain.app/Contents/MacOS/Memdoria" nuova-dopo; }
-aspetta_lettura "$DATI_N"; controlla $? "dopo l'aggiornamento la lettura finisce senza errori"
-[ -L "$SUPPORTO/AI Brain" ]; controlla $? "trasloco fatto: AI Brain e' un collegamento verso Memdoria"
+for i in $(seq 1 30); do pgrep -f "$NOME_V.app/Contents/Resources/runtime/python.*tray.py" > /dev/null && break; sleep 10; done
+pgrep -f "tray.py" > /dev/null || { echo "  (l'app non si e' riaperta da sola: la accendo come farebbe la persona)"; accendi "$APP_V/Contents/MacOS/Memdoria" nuova-dopo; }
+aspetta_lettura "$DATI_N"; richiedi $? "dopo l'aggiornamento la lettura finisce senza errori"
+if [ "$SEPARATA" = 1 ]; then
+  [ -L "$SUPPORTO/AI Brain" ]; controlla $? "trasloco fatto: AI Brain e' un collegamento verso Memdoria"
+else
+  echo "  --   la $VER_V ha gia' i dati in Memdoria: niente trasloco da controllare"
+fi
 DOPO=$(conta "$DATI_N" memories); [ "${DOPO:-0}" -ge "${PRIMA:-2}" ]; controlla $? "memorie intatte: prima ${PRIMA:-?}, dopo ${DOPO:-?}"
 C=$(conta "$DATI_N" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate dopo l'aggiornamento: ${C:-0}"
 [ "$(pgrep -fc 'tray.py')" -le 1 ]; controlla $? "una sola icona accesa (nessuna versione di prima rimasta)"
-grep -q 'ai-brain' "$HOME/.claude.json" && ! grep -q 'Application Support/AI Brain' "$HOME/.claude.json"; controlla $? "le voci delle AI sono rimaste e non puntano piu' alla cartella vecchia"
+if [ "$HA_VOCI" = 1 ]; then grep -q 'ai-brain' "$HOME/.claude.json" && ! grep -q 'Application Support/AI Brain' "$HOME/.claude.json"; controlla $? "le voci delle AI sono rimaste e non puntano piu' alla cartella vecchia"; fi
 lingua_si_cambia "$DATI_N"; controlla $? "dopo l'aggiornamento il cambio lingua funziona"
 pagina_nel_browser "$DATI_N" "dopo l'aggiornamento"
 spegni

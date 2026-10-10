@@ -1,0 +1,3 @@
+Chiave di PROVA, fissa e pubblica di proposito: serve solo a firmare le build di collaudo (mai quelle vere) cosi' gli installer
+delle versioni vecchie si costruiscono una volta e si riusano dalla cache. Non e' la chiave di Memdoria: una build firmata con
+questa non e' accettata da nessuna app vera. Se si cambia, la cache degli installer si rifa' da sola.

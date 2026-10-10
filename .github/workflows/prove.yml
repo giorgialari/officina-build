@@ -10,11 +10,18 @@ on:
       riferimento:
         description: "Ramo o commit del codice da provare"
         default: main
+      aggiorna_schermate:
+        description: "Rigenera le schermate di riferimento (dopo un cambio voluto dell'aspetto): escono cifrate, le metto io nel progetto"
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       riferimento:
         type: string
         default: main
+      aggiorna_schermate:
+        type: boolean
+        default: false
     secrets:
       CODICE_CHIAVE:
         required: true
@@ -88,7 +95,13 @@ jobs:
         env:
           E2E_SALTA_BUILD: "1"
         run: |
-          if [ -d codice/frontend/e2e/schermate/screenshots-linux ]; then
+          if [ "${{ inputs.aggiorna_schermate }}" = "true" ]; then
+            echo "Rigenero tutte le schermate di riferimento."
+            scripts/riservato.sh schermate codice/frontend '[0-9]+ passed' -- npm run test:e2e:schermate -- --update-snapshots
+            mkdir -p nuove && tar czf nuove/schermate-linux.tgz -C codice/frontend/e2e/schermate screenshots-linux
+            scripts/proteggi.sh nuove protette '*.tgz'
+            echo "nuove=1" >> "$GITHUB_OUTPUT"
+          elif [ -d codice/frontend/e2e/schermate/screenshots-linux ]; then
             scripts/riservato.sh schermate codice/frontend '[0-9]+ passed' -- npm run test:e2e:schermate
           else
             echo "Prima volta su Linux: creo le schermate di riferimento invece di confrontarle."
