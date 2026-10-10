@@ -66,17 +66,24 @@ licenza() {  # <app> <cartella dati>
 accendi() { nohup "$1" > "$RUNNER_TEMP/app-$2.log" 2>&1 & }
 
 aspetta_lettura() {  # <dati> -> 0 se finita senza errori
-  local dati=$1 i
+  # «finita» = done (conferma della finestra) oppure «Fatto» (versioni nuove) oppure, per le versioni vecchie che non lo
+  # scrivono, 60 secondi dopo «Grafo»/«Pronto» (le entita' arrivano un attimo dopo).
+  local dati=$1 i visto=0
   for i in $(seq 1 90); do
     sleep 10; rm -rf "$dati/lingua-da-scegliere"
     if [ -f "$dati/progress.json" ]; then
-      # «finita» = done (la conferma della finestra) oppure, senza finestra, gli eventi arrivati a «Grafo»/«Pronto»/«Fatto»
       python3 -c "
 import json,sys
 d=json.load(open(sys.argv[1]))
-fatto=bool(d.get('done')) or any(str(e.get('text','')).startswith(('Grafo','Pronto','Fatto')) for e in d.get('events',[]))
-sys.exit(2 if d.get('error') else (0 if fatto else 1))" "$dati/progress.json"
-      case $? in 0) return 0;; 2) return 2;; esac
+ev=[str(e.get('text','')) for e in d.get('events',[])]
+if d.get('error'): sys.exit(2)
+if d.get('done') or any(t.startswith('Fatto') for t in ev): sys.exit(0)
+sys.exit(3 if any(t.startswith(('Grafo','Pronto')) for t in ev) else 1)" "$dati/progress.json"
+      case $? in
+        0) return 0 ;;
+        2) return 2 ;;
+        3) visto=$((visto+1)); [ "$visto" -ge 6 ] && return 0 ;;
+      esac
     fi
   done
   return 1
@@ -124,7 +131,7 @@ if ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then mkdir -p "$DATI/modello-loc
 accendi /Applications/Memdoria.app/Contents/MacOS/Memdoria nuova
 aspetta_lettura "$DATI"; richiedi $? "la prima lettura finisce senza errori"
 C=$(conta "$DATI" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate: ${C:-0} (attese almeno 3)"
-E=$(conta "$DATI" active_entities); [ "${E:-0}" -ge 1 ]; controlla $? "il grafo si riempie: ${E:-0} entita"
+for i in $(seq 1 9); do E=$(conta "$DATI" active_entities); [ "${E:-0}" -ge 1 ] && break; sleep 10; done; [ "${E:-0}" -ge 1 ]; controlla $? "il grafo si riempie: ${E:-0} entita"
 [ ! -e "$SUPPORTO/AI Brain" ]; controlla $? "nessuna cartella AI Brain in un'installazione nuova"
 "/Applications/Memdoria.app/Contents/Resources/runtime/python/bin/python3.12" -E -s "$(dirname "$0")/licenze-offline.py" "/Applications/Memdoria.app/Contents/Resources/runtime/app" "$CHIAVE"; controlla $? "gli stati della licenza (manca, giusta, scaduta, altro computer, firma rovinata) sull'app installata"
 collega_ai "$DATI"; controlla $? "collega le AI: la voce di Memdoria compare nei file di Claude Code"

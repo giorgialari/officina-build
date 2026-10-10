@@ -86,11 +86,19 @@ function Accendi([string]$app) {
 }
 
 function Aspetta-Lettura([string]$dati, [int]$minuti = 12) {
-    $fine = (Get-Date).AddMinutes($minuti)
+    # «finita» = done (conferma della finestra) oppure «Fatto» (versioni nuove) oppure, per le versioni vecchie che non lo
+    # scrivono, 60 secondi dopo «Grafo»/«Pronto» (le entita' arrivano un attimo dopo).
+    $fine = (Get-Date).AddMinutes($minuti); $visto = 0
     while ((Get-Date) -lt $fine) {
         Start-Sleep 10
-        Remove-Item "$dati\lingua-da-scegliere" -Recurse -Force -ErrorAction SilentlyContinue   # come scegliere la lingua
-        try { $p = Get-Content "$dati\progress.json" -Raw -Encoding UTF8 | ConvertFrom-Json; $fatto = $p.done -or ($p.events | Where-Object { $_.text -match '^(Grafo|Pronto|Fatto)' }); if ($fatto -or $p.error) { return $p } } catch { }
+        Remove-Item "$dati\lingua-da-scegliere" -Recurse -Force -ErrorAction SilentlyContinue
+        try {
+            $p = Get-Content "$dati\progress.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($p.error) { return $p }
+            $testi = @($p.events | ForEach-Object { $_.text })
+            if ($p.done -or @($testi | Where-Object { $_ -match '^Fatto' }).Count -gt 0) { return $p }
+            if (@($testi | Where-Object { $_ -match '^(Grafo|Pronto)' }).Count -gt 0) { $visto++; if ($visto -ge 6) { return $p } }
+        } catch { }
     }
     return $null
 }
@@ -176,6 +184,7 @@ if ($ConPulita) {
     Richiedi ($null -ne $p -and -not $p.error) "la prima lettura finisce senza errori ($($p.error))"
     if ($p) { $p.events | ForEach-Object { Write-Host "       $($_.text)" } }
     $s = Statistiche $dati
+    for ($k = 0; $k -lt 9 -and $s.entities -lt 1; $k++) { Start-Sleep 10; $s = Statistiche $dati }
     Controlla ($s.conversations -ge 3) "conversazioni trovate: $($s.conversations) (attese almeno 3: Antigravity, Gemini CLI, Claude Code)"
     Controlla (-not (Test-Path "$Local\AI Brain")) 'nessuna cartella "AI Brain" in una installazione nuova'
     Controlla (($s.entities -ge 1) -and ($s.memories -ge 1)) "il grafo si riempie: $($s.entities) entita, $($s.memories) memorie, $($s.relations) relazioni"
