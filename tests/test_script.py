@@ -274,7 +274,7 @@ def test_windows_accetta_il_collegamento_ripara_in_italiano_e_in_inglese():
 def test_windows_aspetta_e_racconta_cosa_resta_della_cartella_vecchia():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert "non ha piu' file (rimasto:" in s and "$fineTolta" in s
+    assert "stata tolta (rimasto:" in s and "$fineTolta" in s
 
 
 def test_windows_dice_l_ultimo_passo_se_la_lettura_non_finisce():
@@ -320,10 +320,10 @@ def test_collaudi_di_installazione_pulita_mettono_un_cliente_nel_grafo_loro_stes
     assert mac.index("Verdi Srl", inizio) < mac.index("il grafo si riempie", inizio)
 
 
-def test_windows_aspetta_l_avvio_automatico_e_accetta_la_cartella_vuota():
+def test_windows_aspetta_l_avvio_automatico_e_non_accetta_la_cartella_vecchia_nemmeno_vuota():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert "$fineAvvio" in s and "non ha piu' file" in s and "programmi accesi" in s
+    assert "$fineAvvio" in s and "non ha piu' file" not in s and "programmi accesi" in s
 
 
 def test_anche_la_versione_nuova_si_prende_dalla_cache_se_il_commit_e_lo_stesso():
@@ -376,4 +376,5 @@ def test_le_prove_che_si_saltavano_girano_su_github():
 def test_windows_dice_perche_resta_la_cartella_vecchia_vuota():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert "NOTA: la cartella vuota si e'' lasciata togliere" in s and "NOTA: la cartella vuota e' occupata" in s
+    assert "NOTA: la cartella si e'' lasciata togliere" in s and "NOTA: la cartella e' occupata" in s
+    assert "Controlla (-not $esiste)" in s  # una cartella rimasta, anche vuota, e' un difetto
