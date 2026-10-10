@@ -357,7 +357,15 @@ function Scenario-Aggiornamento([string]$modo) {
                     $strumento = "$env:RUNNER_TEMP\handle64.exe"
                     if (-not (Test-Path $strumento)) { Invoke-WebRequest 'https://live.sysinternals.com/handle64.exe' -OutFile $strumento -UseBasicParsing -TimeoutSec 60 }
                     $righe = & $strumento -accepteula -nobanner "Programs\AI Brain" 2>&1 | Where-Object { $_ -match '\S' } | Select-Object -First 12
-                    foreach ($riga in $righe) { Write-Host "       NOTA handle: $(([string]$riga).Trim())" }
+                    foreach ($riga in $righe) {
+                        Write-Host "       NOTA handle: $(([string]$riga).Trim())"
+                        if (([string]$riga) -match 'pid:\s*(\d+)') {
+                            $chi = Get-CimInstance Win32_Process -Filter "ProcessId=$($Matches[1])" -ErrorAction SilentlyContinue
+                            $padre = if ($chi) { Get-CimInstance Win32_Process -Filter "ProcessId=$($chi.ParentProcessId)" -ErrorAction SilentlyContinue } else { $null }
+                            $comando = if ($chi) { ([string]$chi.CommandLine); } else { '?' }
+                            Write-Host "       NOTA   comando: $($comando.Substring(0, [Math]::Min(200, $comando.Length))); lanciato da: $(if ($padre) { "$($padre.Name) ($($padre.ProcessId))" } else { '?' }); questo collaudo e' il processo $PID"
+                        }
+                    }
                 } catch { Write-Host "       NOTA handle: non disponibile ($($_.Exception.Message))" }
                 Write-Host "       NOTA: la cartella e' occupata ($(([string]$_.Exception.Message).Substring(0, [Math]::Min(230, ([string]$_.Exception.Message).Length)))); programmi della cartella vecchia: $chi"
             }

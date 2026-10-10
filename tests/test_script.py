@@ -423,3 +423,9 @@ def test_windows_dice_chi_tiene_occupata_la_cartella_vecchia_con_handle():
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "handle64.exe" in s and "NOTA handle:" in s
     assert s.index("handle64.exe") < s.index("NOTA: la cartella e' occupata")  # prima di dire che e' occupata si cerca chi la tiene
+
+
+def test_windows_dice_comando_e_padre_del_processo_che_tiene_la_cartella():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "NOTA   comando:" in s and "lanciato da:" in s and "questo collaudo e' il processo" in s
