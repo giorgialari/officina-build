@@ -86,6 +86,20 @@ jobs:
         run: |
           sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" codice/backend/app/integrita.py codice/backend/app/licenza.py
           grep -c "$PUBBLICA" codice/backend/app/integrita.py codice/backend/app/licenza.py
+      - name: Modelli della ricerca (gli stessi dell'immagine del server, scaricati qui)
+        shell: powershell
+        working-directory: codice
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
+          $m = "$env:AI_BRAIN_VENDOR\common\models"
+          New-Item -ItemType Directory -Force $m | Out-Null
+          $env:FASTEMBED_CACHE_PATH = $m
+          $env:HF_HOME = "$m\huggingface"
+          $env:HF_HUB_DISABLE_XET = '1'
+          $env:PYTHONPATH = (Get-Location).Path
+          python scripts\download_models.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: App e impronte
         shell: powershell
         working-directory: codice
