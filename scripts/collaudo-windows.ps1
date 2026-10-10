@@ -4,7 +4,7 @@
 #      poi controlla trasloco dei dati, nessuna vecchia accesa, memorie intatte e conversazioni trovate.
 # Uso: collaudo-windows.ps1 -Vecchio <exe> -Nuovo <exe> -Codice <cartella del codice> -Chiave <chiave privata di prova>
 param([Parameter(Mandatory)][string]$Vecchio, [Parameter(Mandatory)][string]$Nuovo,
-      [Parameter(Mandatory)][string]$Codice, [Parameter(Mandatory)][string]$Chiave, [switch]$ConPulita, [ValidateSet('installer','app')][string]$Modo = 'installer')
+      [Parameter(Mandatory)][string]$Codice, [Parameter(Mandatory)][string]$Chiave, [switch]$ConPulita, [ValidateSet('installer','app','nessuno')][string]$Modo = 'installer')
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 $Local = $env:LOCALAPPDATA
@@ -296,7 +296,7 @@ function Scenario-Aggiornamento([string]$modo) {
     Disinstalla-Tutto
 }
 
-Scenario-Aggiornamento $Modo
+if ($Modo -ne 'nessuno') { Scenario-Aggiornamento $Modo }
 
 Say 'Esito'
 Spegni-Tutto

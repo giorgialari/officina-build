@@ -178,7 +178,7 @@ jobs:
         retention-days: 1
         compression-level: 0
   win-collauda:
-    name: Windows · aggiorna da ${{ matrix.vecchia }} (${{ matrix.modo }})
+    name: Windows · ${{ matrix.vecchia == 'nessuna' && 'installazione pulita' || format('aggiorna da {0} ({1})', matrix.vecchia, matrix.modo) }}
     needs:
     - win-costruisci
     - versioni
@@ -281,6 +281,9 @@ jobs:
       AI_BRAIN_BUILD: ${{ github.workspace }}/lavoro/build
       AI_BRAIN_DIST: ${{ github.workspace }}/lavoro/dist
     steps:
+    - name: 'Spotlight spento (macchina usa e getta: scritture piu'' veloci)'
+      run: |
+        sudo mdutil -a -i off > /dev/null 2>&1 || true
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
@@ -372,13 +375,16 @@ jobs:
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
   mac-collauda:
-    name: Mac · aggiorna da ${{ matrix.vecchia }}
+    name: Mac · ${{ matrix.vecchia == 'nessuna' && 'installazione pulita' || format('aggiorna da {0}', matrix.vecchia) }}
     needs:
     - mac-costruisci
     - versioni
     runs-on: macos-14
     timeout-minutes: 240
     steps:
+    - name: 'Spotlight spento (macchina usa e getta: scritture piu'' veloci)'
+      run: |
+        sudo mdutil -a -i off > /dev/null 2>&1 || true
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
@@ -406,7 +412,7 @@ jobs:
     - name: Collaudo
       run: |
         VECCHIO=$(ls pezzi/dmg-${{ matrix.vecchia }}/*.dmg); NUOVO=$(ls pezzi/dmg-nuovo/*.dmg)
-        CON_PULITA=${{ matrix.pulita }} bash scripts/collaudo-mac.sh "$PWD/$VECCHIO" "$PWD/$NUOVO" "$PWD/codice" "$PWD/pezzi/chiave-prova-mac/chiave-privata.pem"
+        CON_PULITA=${{ matrix.pulita }} SOLO_PULITA=${{ matrix.solo_pulita }} bash scripts/collaudo-mac.sh "$PWD/$VECCHIO" "$PWD/$NUOVO" "$PWD/codice" "$PWD/pezzi/chiave-prova-mac/chiave-privata.pem"
     - name: Dettaglio cifrato (solo se rosso)
       if: failure()
       run: scripts/cifra.sh

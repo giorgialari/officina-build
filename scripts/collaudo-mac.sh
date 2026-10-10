@@ -153,6 +153,7 @@ rm -rf /Applications/Memdoria.app "$DATI"
 
 fi
 
+if [ "${SOLO_PULITA:-false}" != true ]; then
 say "B. Aggiornamento dall'app dalla versione di prima"
 # Fino alla 1.0.30 l'app si chiama «AI Brain» e i dati stanno in «AI Brain» (al primo avvio nuovo si traslocano in «Memdoria»);
 # dalla 1.0.31 sono gia' «Memdoria»: non c'e' trasloco da controllare.
@@ -199,6 +200,8 @@ if [ "$HA_VOCI" = 1 ]; then grep -q 'ai-brain' "$HOME/.claude.json" && ! grep -q
 lingua_si_cambia "$DATI_N"; controlla $? "dopo l'aggiornamento il cambio lingua funziona"
 pagina_nel_browser "$DATI_N" "dopo l'aggiornamento"
 spegni
+
+fi
 
 say "Esito"
 if [ "$KO" -gt 0 ]; then echo "COLLAUDO FALLITO ($KO controlli)"; mkdir -p "$RUNNER_TEMP/riservato"; for l in "$RUNNER_TEMP"/app-*.log; do { echo "--- $l"; tail -80 "$l"; } >> "$RUNNER_TEMP/riservato/dettagli.log"; done; exit 1; fi

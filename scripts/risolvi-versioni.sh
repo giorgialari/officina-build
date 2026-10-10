@@ -24,11 +24,13 @@ for v in [x.strip() for x in elenco.split(",") if x.strip()]:
         print(f"::warning::Non trovo il commit della versione {v}: la salto", file=sys.stderr)
         continue
     costruzioni.append({"nome": v, "riferimento": commit})
-    prima = not collaudi
-    collaudi.append({"vecchia": v, "pulita": prima})  # l'installazione pulita si prova una volta sola
-    collaudi_win += [{"vecchia": v, "pulita": prima, "modo": "installer"}, {"vecchia": v, "pulita": False, "modo": "app"}]  # i due modi in parallelo
+    collaudi.append({"vecchia": v, "pulita": False, "solo_pulita": False})
+    collaudi_win += [{"vecchia": v, "pulita": False, "modo": "installer"}, {"vecchia": v, "pulita": False, "modo": "app"}]  # i due modi in parallelo
 if not collaudi:
     print("Nessuna versione di prima da collaudare", file=sys.stderr)
+# L'installazione pulita della versione nuova e' un collaudo a parte (in parallelo, senza aggiornamenti dentro).
+collaudi.insert(0, {"vecchia": "nessuna", "pulita": True, "solo_pulita": True})
+collaudi_win.insert(0, {"vecchia": "nessuna", "pulita": True, "modo": "nessuno"})
 out = os.environ.get("GITHUB_OUTPUT")
 righe = {"matrice": json.dumps(costruzioni), "collaudi": json.dumps(collaudi), "collaudi_win": json.dumps(collaudi_win), "corrente": corrente,
          "primo": costruzioni[1]["riferimento"] if len(costruzioni) > 1 else "", "primo_nome": costruzioni[1]["nome"] if len(costruzioni) > 1 else ""}
