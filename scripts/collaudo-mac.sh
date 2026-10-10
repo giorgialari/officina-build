@@ -72,10 +72,31 @@ api() {  # <dati> <metodo> <percorso> [corpo]
   else curl -fsS -X "$2" -H "Authorization: Bearer $token" "http://127.0.0.1:$porta$3"; fi
 }
 conta() { api "$1" GET /admin/stats | python3 -c "import json,sys;print(json.load(sys.stdin)['$2'])"; }
+collega_ai() {  # <dati> -> 0 se la voce di Memdoria compare nei file di Claude Code
+  echo connetti > "$1/connetti.request"
+  local i
+  for i in $(seq 1 18); do sleep 5; grep -q 'ai-brain' "$HOME/.claude.json" 2>/dev/null && return 0; done
+  return 1
+}
+lingua_si_cambia() {  # <dati>
+  local cfg porta
+  porta=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['brain_port'])" "$1/config.json")
+  curl -fsS -X PUT -H 'Content-Type: application/json' -d '{"lingua":"en"}' "http://127.0.0.1:$porta/api/lingua" > /dev/null || return 1
+  curl -fsS "http://127.0.0.1:$porta/api/lingua" | grep -q '"lingua":"en"' || return 1
+  curl -fsS -X PUT -H 'Content-Type: application/json' -d '{"lingua":"it"}' "http://127.0.0.1:$porta/api/lingua" > /dev/null || return 1
+  curl -fsS "http://127.0.0.1:$porta/api/lingua" | grep -q '"lingua":"it"'
+}
+pagina_nel_browser() {  # <dati> <quando>
+  command -v node > /dev/null || return 0
+  local porta; porta=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['brain_port'])" "$1/config.json")
+  local uscita; uscita=$(node "$(dirname "$0")/pagina.mjs" "http://127.0.0.1:$porta/app/" "$RUNNER_TEMP/pagina-mac-${2// /-}" 2>&1 | tail -1); local r=$?
+  controlla $r "la pagina si apre nel browser e disegna il grafo ($2): $uscita"
+}
 spegni() { pkill -f "Contents/Resources/runtime" 2>/dev/null; sleep 5; pkill -9 -f "Contents/Resources/runtime" 2>/dev/null; sleep 2; }
 
 chat_finte
 
+if [ "${CON_PULITA:-true}" = true ]; then
 say "A. Installazione pulita della versione nuova"
 monta_e_copia "$NUOVO" "Memdoria.app"; controlla $? "Memdoria.app copiata in Applicazioni"
 DATI="$SUPPORTO/Memdoria"
@@ -85,8 +106,28 @@ aspetta_lettura "$DATI"; controlla $? "la prima lettura finisce senza errori"
 C=$(conta "$DATI" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate: ${C:-0} (attese almeno 3)"
 E=$(conta "$DATI" active_entities); [ "${E:-0}" -ge 1 ]; controlla $? "il grafo si riempie: ${E:-0} entita"
 [ ! -e "$SUPPORTO/AI Brain" ]; controlla $? "nessuna cartella AI Brain in un'installazione nuova"
+collega_ai "$DATI"; controlla $? "collega le AI: la voce di Memdoria compare nei file di Claude Code"
+lingua_si_cambia "$DATI"; controlla $? "il cambio lingua (inglese e di nuovo italiano) si salva"
+# Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti)
+modello=1
+for i in $(seq 1 60); do ls "$DATI"/modello-locale/*.gguf.ok > /dev/null 2>&1 && { modello=0; break; }; sleep 20; done
+controlla $modello "Memdoria AI ha scaricato il suo modello"
+if [ "$modello" = 0 ]; then
+  inizio=$(conta "$DATI" memories); lavora=1
+  for i in $(seq 1 30); do [ -f "$DATI/modello-locale/stato.json" ] || [ "$(conta "$DATI" memories)" -gt "${inizio:-0}" ] && { lavora=0; break; }; sleep 20; done
+  controlla $lavora "Memdoria AI ha cominciato a lavorare sulle conversazioni"
+fi
+pagina_nel_browser "$DATI" "installazione pulita"
+# Disinstallazione (come «Disinstalla Memdoria» nella pagina): programmi spenti, dati tolti, voci delle AI tolte
+echo '{"dati": true, "backup": false}' > "$DATI/disinstalla.request"
+for i in $(seq 1 60); do sleep 5; pgrep -f "Contents/Resources/runtime" > /dev/null || break; done
+! pgrep -f "Contents/Resources/runtime" > /dev/null; controlla $? "dopo la disinstallazione nessun programma e' acceso"
+[ ! -d "$DATI" ]; controlla $? "dopo la disinstallazione i dati sono stati tolti"
+! grep -q 'ai-brain' "$HOME/.claude.json" 2>/dev/null; controlla $? "dopo la disinstallazione le voci delle AI sono state tolte"
 spegni
 rm -rf /Applications/Memdoria.app "$DATI"
+
+fi
 
 say "B. Aggiornamento dall'app dalla versione di prima"
 monta_e_copia "$VECCHIO" "AI Brain.app"; controlla $? "AI Brain.app (versione di prima) copiata"
@@ -103,6 +144,7 @@ aspetta_lettura "$DATI_V"; controlla $? "la versione di prima finisce la lettura
 api "$DATI_V" POST /admin/remember '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
 api "$DATI_V" POST /admin/remember '{"text":"Il server di Verdi Srl e in Hetzner a Norimberga.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
 PRIMA=$(conta "$DATI_V" memories); [ "${PRIMA:-0}" -ge 2 ]; controlla $? "memorie salvate prima dell'aggiornamento: ${PRIMA:-0}"
+collega_ai "$DATI_V"; controlla $? "la versione di prima ha collegato le AI"
 sleep 30
 echo aggiorna > "$DATI_V/aggiorna.request"
 # l'app scarica, installa, si spegne e si riapre da sola: si aspetta la versione nuova
@@ -120,6 +162,9 @@ aspetta_lettura "$DATI_N"; controlla $? "dopo l'aggiornamento la lettura finisce
 DOPO=$(conta "$DATI_N" memories); [ "${DOPO:-0}" -ge "${PRIMA:-2}" ]; controlla $? "memorie intatte: prima ${PRIMA:-?}, dopo ${DOPO:-?}"
 C=$(conta "$DATI_N" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate dopo l'aggiornamento: ${C:-0}"
 [ "$(pgrep -fc 'tray.py')" -le 1 ]; controlla $? "una sola icona accesa (nessuna versione di prima rimasta)"
+grep -q 'ai-brain' "$HOME/.claude.json" && ! grep -q 'Application Support/AI Brain' "$HOME/.claude.json"; controlla $? "le voci delle AI sono rimaste e non puntano piu' alla cartella vecchia"
+lingua_si_cambia "$DATI_N"; controlla $? "dopo l'aggiornamento il cambio lingua funziona"
+pagina_nel_browser "$DATI_N" "dopo l'aggiornamento"
 spegni
 
 say "Esito"

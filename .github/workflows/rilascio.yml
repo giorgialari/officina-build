@@ -12,19 +12,40 @@ run-name: ${{ inputs.solo_collaudo && 'Collaudo' || 'Collaudo e rilascio' }} · 
       riferimento:
         description: Ramo o commit del codice (la versione nuova)
         default: main
-      vecchio:
-        description: Commit della versione di prima per il collaudo di aggiornamento (di base la 1.0.30)
-        default: 2490f8a
       solo_collaudo:
         description: 'Solo prove e collaudi: non costruisce il rilascio'
         type: boolean
         default: true
+      versioni:
+        description: 'Versioni di prima da collaudare nell''aggiornamento, separate da virgole (es. 1.0.25,1.0.30). Vuoto: quelle di versioni-in-uso.json'
+        default: ''
 permissions:
   contents: read
 concurrency:
   group: rilascio
   cancel-in-progress: false
 jobs:
+  versioni:
+    name: Le versioni di prima da collaudare
+    runs-on: ubuntu-24.04
+    outputs:
+      matrice: ${{ steps.v.outputs.matrice }}
+      collaudi: ${{ steps.v.outputs.collaudi }}
+      primo: ${{ steps.v.outputs.primo }}
+      primo_nome: ${{ steps.v.outputs.primo_nome }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ inputs.riferimento }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+    - id: v
+      name: Trova il commit di ogni versione
+      env:
+        ELENCO: ${{ inputs.versioni }}
+      run: |
+        if [ -z "$ELENCO" ]; then ELENCO=$(python3 -c "import json;print(','.join(json.load(open('versioni-in-uso.json'))))"); fi
+        scripts/risolvi-versioni.sh codice "${{ inputs.riferimento }}" "$ELENCO" | cut -c1-200
   prove:
     uses: ./.github/workflows/prove.yml
     with:
@@ -58,16 +79,13 @@ jobs:
     name: Costruisce ${{ matrix.nome }}
     needs:
     - win-chiavi
+    - versioni
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        include:
-        - nome: vecchio
-          riferimento: ${{ inputs.vecchio }}
-        - nome: nuovo
-          riferimento: ${{ inputs.riferimento }}
+        include: ${{ fromJSON(needs.versioni.outputs.matrice) }}
     env:
       AI_BRAIN_VENDOR: ${{ github.workspace }}\..\vendor
       AI_BRAIN_BUILD: ${{ github.workspace }}\..\build
@@ -97,8 +115,10 @@ jobs:
       env:
         PUBBLICA: ${{ needs.win-chiavi.outputs.pubblica }}
       run: |
-        sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" codice/backend/app/integrita.py codice/backend/app/licenza.py
-        grep -c "$PUBBLICA" codice/backend/app/integrita.py codice/backend/app/licenza.py
+        for f in codice/backend/app/integrita.py codice/backend/app/licenza.py; do
+          [ -f "$f" ] && sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
+        done
+        grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
     - name: Modelli della ricerca (gli stessi dell'immagine del server, scaricati qui)
       shell: powershell
       working-directory: codice
@@ -128,7 +148,7 @@ jobs:
         $versione = (Get-Content VERSION -TotalCount 1).Trim()
         $elenco = "$env:AI_BRAIN_BUILD\AI Brain\runtime\app\impronte.json"
         python -m pip install --quiet cryptography
-        python backend\app\integrita.py firma $elenco --chiave "$env:GITHUB_WORKSPACE\chiave\chiave-privata.pem" --versione $versione --sistema windows
+        if (Test-Path backend\app\integrita.py) { python backend\app\integrita.py firma $elenco --chiave "$env:GITHUB_WORKSPACE\chiave\chiave-privata.pem" --versione $versione --sistema windows }
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 installer
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -139,17 +159,18 @@ jobs:
         retention-days: 1
         compression-level: 0
   win-collauda:
-    name: Installa, aggiorna e controlla
+    name: Installa, aggiorna e controlla ${{ matrix.vecchia }}
     needs:
     - win-costruisci
+    - versioni
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 240
     steps:
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
         path: pezzi
-        pattern: '{installer-*,chiave-prova}'
+        pattern: '{installer-nuovo,installer-${{ matrix.vecchia }},chiave-prova}'
     - name: Codice per fare le licenze di prova (solo licenza.py)
       shell: bash
       env:
@@ -174,10 +195,14 @@ jobs:
     - name: Collaudo
       shell: powershell
       run: |
-        $vecchio = (Get-ChildItem pezzi\installer-vecchio\*.exe).FullName
+        $vecchio = (Get-ChildItem pezzi\installer-${{ matrix.vecchia }}\*.exe).FullName
         $nuovo = (Get-ChildItem pezzi\installer-nuovo\*.exe).FullName
-        powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 `
-          -Vecchio $vecchio -Nuovo $nuovo -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem"
+        $pulita = '${{ matrix.pulita }}' -eq 'true'
+        if ($pulita) {
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 -Vecchio $vecchio -Nuovo $nuovo -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem" -ConPulita
+        } else {
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 -Vecchio $vecchio -Nuovo $nuovo -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem"
+        }
         exit $LASTEXITCODE
     - name: Dettaglio cifrato (solo se rosso)
       if: failure()
@@ -187,9 +212,14 @@ jobs:
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: registri-cifrati-windows
+        name: registri-cifrati-windows-${{ matrix.vecchia }}
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
+    if: ${{ !cancelled() && needs.versioni.outputs.collaudi != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.versioni.outputs.collaudi) }}
   mac-chiavi:
     name: Chiave di prova
     runs-on: ubuntu-24.04
@@ -217,16 +247,13 @@ jobs:
     name: Costruisce ${{ matrix.nome }}
     needs:
     - mac-chiavi
+    - versioni
     runs-on: macos-14
-    timeout-minutes: 120
+    timeout-minutes: 150
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        include:
-        - nome: vecchio
-          riferimento: ${{ inputs.vecchio }}
-        - nome: nuovo
-          riferimento: ${{ inputs.riferimento }}
+        include: ${{ fromJSON(needs.versioni.outputs.matrice) }}
     env:
       AI_BRAIN_VENDOR: ${{ github.workspace }}/../vendor
       AI_BRAIN_BUILD: ${{ github.workspace }}/../build
@@ -245,8 +272,10 @@ jobs:
       env:
         PUBBLICA: ${{ needs.mac-chiavi.outputs.pubblica }}
       run: |
-        sed -i '' "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" codice/backend/app/integrita.py codice/backend/app/licenza.py
-        grep -c "$PUBBLICA" codice/backend/app/integrita.py codice/backend/app/licenza.py
+        for f in codice/backend/app/integrita.py codice/backend/app/licenza.py; do
+          [ -f "$f" ] && sed -i '' "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
+        done
+        grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
     - name: Node (quello dell'app) e pagine
       run: |
         NODE=$(grep '^NODE_VERSION=' codice/deploy/comune/versions.env | cut -d= -f2 | tr -d v)
@@ -271,6 +300,8 @@ jobs:
         AI_BRAIN_PAGINE: ${{ runner.temp }}/pagine
       run: |
         pip3 install --quiet --break-system-packages cryptography 2>/dev/null || pip3 install --quiet cryptography
+        # Le versioni di prima cercano la chiave sempre nello stesso posto: ce la mettiamo (quella di prova, di questa corsa)
+        mkdir -p "$HOME/.config/ai-brain-licenze" && cp "$AI_BRAIN_CHIAVE_LICENZE" "$HOME/.config/ai-brain-licenze/chiave-privata.pem"
         scripts/riservato.sh dmg codice 'dmg|Pronto' -- bash deploy/mac/build-mac.sh release
     - name: Il dmg in una cartella della corsa
       run: mkdir -p uscita && cp "$AI_BRAIN_DIST"/AI-Brain-*-mac-arm64.dmg uscita/
@@ -291,25 +322,35 @@ jobs:
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
   mac-collauda:
-    name: Installa, aggiorna dall'app e controlla
+    name: Installa, aggiorna dall'app e controlla ${{ matrix.vecchia }}
     needs:
     - mac-costruisci
+    - versioni
     runs-on: macos-14
-    timeout-minutes: 90
+    timeout-minutes: 240
     steps:
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
         path: pezzi
-        pattern: '{dmg-*,chiave-prova-mac}'
+        pattern: '{dmg-nuovo,dmg-${{ matrix.vecchia }},chiave-prova-mac}'
     - uses: ./.github/actions/codice
       with:
         riferimento: ${{ inputs.riferimento }}
         chiave: ${{ secrets.CODICE_CHIAVE }}
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Browser per guardare la pagina vera
+      working-directory: scripts
+      run: |
+        npm init -y > /dev/null
+        npm install --silent playwright@1.49.1
+        npx playwright install chromium
     - name: Collaudo
       run: |
-        VECCHIO=$(ls pezzi/dmg-vecchio/*.dmg); NUOVO=$(ls pezzi/dmg-nuovo/*.dmg)
-        bash scripts/collaudo-mac.sh "$PWD/$VECCHIO" "$PWD/$NUOVO" "$PWD/codice" "$PWD/pezzi/chiave-prova-mac/chiave-privata.pem"
+        VECCHIO=$(ls pezzi/dmg-${{ matrix.vecchia }}/*.dmg); NUOVO=$(ls pezzi/dmg-nuovo/*.dmg)
+        CON_PULITA=${{ matrix.pulita }} bash scripts/collaudo-mac.sh "$PWD/$VECCHIO" "$PWD/$NUOVO" "$PWD/codice" "$PWD/pezzi/chiave-prova-mac/chiave-privata.pem"
     - name: Dettaglio cifrato (solo se rosso)
       if: failure()
       run: scripts/cifra.sh
@@ -317,89 +358,85 @@ jobs:
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: registri-cifrati-mac
+        name: registri-cifrati-mac-${{ matrix.vecchia }}
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
+    if: ${{ !cancelled() && needs.versioni.outputs.collaudi != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.versioni.outputs.collaudi) }}
   srv-server:
     name: Il server su una macchina pulita
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/codice
       with:
         riferimento: ${{ inputs.riferimento }}
         chiave: ${{ secrets.CODICE_CHIAVE }}
-    - name: Immagine del server (costruita dal codice)
+    - name: La versione di prima (se c'e')
+      if: ${{ needs.versioni.outputs.primo != '' }}
+      uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ needs.versioni.outputs.primo }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+        cartella: codice-vecchio
+    - name: Immagine nuova (costruita dal codice)
       run: |
         V=$(cat codice/VERSION)
         echo "V=$V" >> "$GITHUB_ENV"
-        scripts/riservato.sh immagine codice 'Successfully|DONE|naming to' -- \
-          docker build -f deploy/server/Dockerfile --build-arg AI_BRAIN_VERSION="$V" -t "ai-brain-server:$V" .
-    - name: Il server si accende (grafo, ricerca e brain, come sul server vero)
+        scripts/riservato.sh immagine-nuova codice 'naming to|DONE' -- docker build -f deploy/server/Dockerfile --build-arg AI_BRAIN_VERSION="$V" -t "ai-brain-server:$V" .
+    - name: Immagine di prima
+      if: ${{ needs.versioni.outputs.primo != '' }}
+      run: |
+        VV=$(cat codice-vecchio/VERSION)
+        echo "VV=$VV" >> "$GITHUB_ENV"
+        scripts/riservato.sh immagine-vecchia codice-vecchio 'naming to|DONE' -- docker build -f deploy/server/Dockerfile --build-arg AI_BRAIN_VERSION="$VV" -t "ai-brain-server:$VV" .
+    - name: Il server si accende (la versione di prima se c'e', altrimenti la nuova)
       run: |
         cat > codice/deploy/server/.env <<EOF
-        AI_BRAIN_VERSION=$V
+        AI_BRAIN_VERSION=${VV:-$V}
         AI_BRAIN_PUBLIC_URL=http://localhost:8765
         BRAIN_ALLOWED_HOSTS=localhost,127.0.0.1
         NEO4J_PASSWORD=$(openssl rand -hex 16)
         BRAIN_TOKEN=$(openssl rand -hex 24)
         MEILI_KEY=$(openssl rand -hex 24)
         EOF
-        scripts/riservato.sh accensione codice/deploy/server 'Started|Healthy|running' -- \
-          docker compose -f docker-compose.yml up -d grafo ricerca brain
-    - name: Aspetta che risponda
+        scripts/riservato.sh accensione codice/deploy/server 'Started|Healthy|running' -- docker compose -f docker-compose.yml up -d grafo ricerca brain
+        for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8765/health > /dev/null 2>&1 && break; sleep 5; done
+    - name: Lo provo come una persona
+      run: scripts/prova-server.sh codice/deploy/server scrivi
+    - name: Si aggiorna alla versione nuova (i dati restano)
+      if: ${{ needs.versioni.outputs.primo != '' }}
       run: |
-        for i in $(seq 1 60); do
-          curl -fsS http://127.0.0.1:8765/health > /dev/null 2>&1 && { echo "Il server risponde dopo $((i*5)) secondi"; exit 0; }
-          sleep 5
-        done
-        echo "Il server non risponde dopo 5 minuti"; exit 1
-    - name: Lo provo come una persona (salvare, cercare, copia di sicurezza)
+        cd codice/deploy/server
+        docker compose -f docker-compose.yml stop brain > /dev/null 2>&1
+        sed -i "s/^AI_BRAIN_VERSION=.*/AI_BRAIN_VERSION=$V/" .env
+        ../../../scripts/riservato.sh aggiornamento . 'Started|Healthy|running' -- docker compose -f docker-compose.yml up -d brain
+    - name: Dopo l'aggiornamento o il riavvio le memorie ci sono ancora
       run: |
-        T=$(grep '^BRAIN_TOKEN=' codice/deploy/server/.env | cut -d= -f2)
-        H="Authorization: Bearer $T"
-        B=http://127.0.0.1:8765
-        mkdir -p "$RUNNER_TEMP/riservato"; D="$RUNNER_TEMP/riservato/risposte.log"; : > "$D"
-        KO=0
-        controlla() { if [ "$1" = 0 ]; then echo "  OK   $2"; else echo "  MALE $2"; KO=$((KO+1)); fi; }
-        R=$(curl -sS -H "$H" "$B/admin/stats" 2>&1); echo "stats: $R" >> "$D"
-        echo "$R" | grep -q '"memories"'; controlla $? "le statistiche rispondono"
-        R=$(curl -sS -X POST -H "$H" -H 'Content-Type: application/json' "$B/admin/remember" -d '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' 2>&1); echo "remember: $R" >> "$D"
-        echo "$R" | grep -q '"status":"created"'; controlla $? "una memoria si salva"
-        sleep 5
-        R=$(curl -sS -X POST -H "$H" -H 'Content-Type: application/json' "$B/admin/search" -d '{"query":"gestionale Alfa","limit":5}' 2>&1); echo "search: $R" >> "$D"
-        echo "$R" | grep -q 'Alfa'; controlla $? "la memoria si ritrova con la ricerca"
-        R=$(curl -sS -H "$H" "$B/admin/stats" 2>&1); echo "stats dopo: $R" >> "$D"
-        echo "$R" | grep -q '"memories":1'; controlla $? "il conto delle memorie e' giusto"
-        [ "$KO" = 0 ]
-    - name: Il server si riavvia e le memorie ci sono ancora
-      run: |
-        set -e
-        cd codice/deploy/server && docker compose -f docker-compose.yml restart brain > /dev/null
-        for i in $(seq 1 40); do curl -fsS http://127.0.0.1:8765/health > /dev/null 2>&1 && break; sleep 5; done
-        T=$(grep '^BRAIN_TOKEN=' .env | cut -d= -f2)
-        curl -fsS -H "Authorization: Bearer $T" http://127.0.0.1:8765/admin/stats | grep -q '"memories":1' && echo "OK   dopo il riavvio le memorie ci sono"
+        if [ -z "${VV:-}" ]; then (cd codice/deploy/server && docker compose -f docker-compose.yml restart brain > /dev/null); fi
+        scripts/prova-server.sh codice/deploy/server verifica
     - name: Dettaglio cifrato (solo se rosso)
       if: failure()
       run: |
         mkdir -p "$RUNNER_TEMP/riservato"
         cd codice/deploy/server && docker compose -f docker-compose.yml logs --no-color --tail 300 > "$RUNNER_TEMP/riservato/server.log" 2>&1 || true
-        openssl cms -encrypt -aes256 -binary -in "$RUNNER_TEMP/riservato/server.log" -out "$RUNNER_TEMP/riservato/server.cms" -outform DER "$GITHUB_WORKSPACE/registri.pem"
-    - name: Allegato cifrato
-      if: failure()
+        cd "$GITHUB_WORKSPACE" && scripts/cifra.sh
+    - if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: registri-cifrati-server
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
+    needs:
+    - versioni
   windows:
     name: Windows (firmato)
-    needs: &id001
-    - prove
-    - win-collauda
-    - mac-collauda
-    - srv-server
+    needs:
+    - esito-collaudi
     runs-on: windows-latest
     timeout-minutes: 120
     env:
@@ -471,10 +508,11 @@ jobs:
         name: registri-cifrati-rilascio-windows
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
-    if: ${{ !inputs.solo_collaudo }}
+    if: ${{ !inputs.solo_collaudo && needs.esito-collaudi.result == 'success' }}
   mac:
     name: Mac (firmato)
-    needs: *id001
+    needs:
+    - esito-collaudi
     runs-on: macos-14
     timeout-minutes: 120
     env:
@@ -532,10 +570,11 @@ jobs:
         name: registri-cifrati-rilascio-mac
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
-    if: ${{ !inputs.solo_collaudo }}
+    if: ${{ !inputs.solo_collaudo && needs.esito-collaudi.result == 'success' }}
   server:
     name: Immagine server ${{ matrix.arch }} (firmata)
-    needs: *id001
+    needs:
+    - esito-collaudi
     strategy:
       matrix:
         include:
@@ -597,7 +636,7 @@ jobs:
         path: protetto/
         retention-days: 3
         compression-level: 0
-    if: ${{ !inputs.solo_collaudo }}
+    if: ${{ !inputs.solo_collaudo && needs.esito-collaudi.result == 'success' }}
   pronto:
     name: Pronto da pubblicare
     needs:
@@ -612,7 +651,15 @@ jobs:
     if: ${{ !inputs.solo_collaudo }}
   esito-collaudi:
     name: Tutti i collaudi verdi
-    needs: *id001
+    needs:
+    - prove
+    - win-collauda
+    - mac-collauda
+    - srv-server
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     steps:
-    - run: echo "Prove e collaudi di Windows, Mac e server riusciti."
+    - env:
+        ESITI: ${{ toJSON(needs) }}
+      run: |
+        echo "$ESITI" | python3 -c "import json,sys; n=json.load(sys.stdin); ko=[k for k,v in n.items() if v['result'] not in ('success','skipped')]; print('Collaudi rossi:', ', '.join(ko)) if ko else print('Prove e collaudi di Windows, Mac e server riusciti.'); sys.exit(1 if ko else 0)"

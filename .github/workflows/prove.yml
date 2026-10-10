@@ -83,6 +83,39 @@ jobs:
         env:
           E2E_SALTA_BUILD: "1"
         run: scripts/riservato.sh pagina codice/frontend '[0-9]+ passed' -- npm run test:e2e:pagina
+      - name: Schermate (stili del grafo e del minigrafo, icone e pagine, confrontate con quelle di riferimento per Linux)
+        id: schermate
+        env:
+          E2E_SALTA_BUILD: "1"
+        run: |
+          if [ -d codice/frontend/e2e/schermate/screenshots-linux ]; then
+            scripts/riservato.sh schermate codice/frontend '[0-9]+ passed' -- npm run test:e2e:schermate
+          else
+            echo "Prima volta su Linux: creo le schermate di riferimento invece di confrontarle."
+            scripts/riservato.sh schermate codice/frontend '[0-9]+ passed' -- npm run test:e2e:schermate -- --update-snapshots=missing
+            mkdir -p nuove && tar czf nuove/schermate-linux.tgz -C codice/frontend/e2e/schermate screenshots-linux
+            scripts/proteggi.sh nuove protette '*.tgz'
+            echo "nuove=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Schermate di riferimento appena create (cifrate, le apri tu e le metti nel progetto)
+        if: steps.schermate.outputs.nuove == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: schermate-linux-nuove
+          path: protette/
+          retention-days: 7
+      - name: Rapporto delle prove nel browser, cifrato e solo se rosse
+        if: failure()
+        run: |
+          mkdir -p rapporto && tar czf rapporto/rapporto-pagina.tgz -C codice/frontend/tmp e2e-angular 2>/dev/null || true
+          [ -f rapporto/rapporto-pagina.tgz ] && scripts/proteggi.sh rapporto protetto-rapporto '*.tgz' || true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: rapporto-pagina-cifrato
+          path: protetto-rapporto/
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Dettaglio cifrato (solo se rosse)
         if: failure()
         uses: actions/upload-artifact@v4
