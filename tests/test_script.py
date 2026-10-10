@@ -339,3 +339,15 @@ def test_il_commit_della_versione_nuova_e_risolto_prima_della_costruzione():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "risolvi-versioni.sh").read_text(encoding="utf-8")
     assert '"nome": "nuovo", "riferimento": sha_nuovo' in s
+
+
+def test_riservato_dice_le_fasi_lunghe_e_non_perde_il_codice_di_uscita(tmp_path):
+    import os, pathlib, subprocess
+    radice = pathlib.Path(__file__).resolve().parent.parent
+    (tmp_path / "w").mkdir()
+    comando = "printf '\\n\\033[1;36m▸ uno\\033[0m\\n'; sleep 21; echo '> due'; sleep 1; echo fine; exit 3"
+    r = subprocess.run(["bash", str(radice / "scripts" / "riservato.sh"), "prova", "w", "fine", "--", "bash", "-c", comando],
+                       capture_output=True, text=True, cwd=tmp_path, env={**os.environ, "RUNNER_TEMP": str(tmp_path)})
+    assert r.returncode == 3, r.stdout + r.stderr
+    assert "fasi lunghe: uno 21s" in r.stdout or "fasi lunghe: uno 22s" in r.stdout, r.stdout
+    assert "due" not in r.stdout.split("fasi lunghe:")[1]  # le fasi brevi non escono
