@@ -319,6 +319,16 @@ function Scenario-Aggiornamento([string]$modo) {
     Start-Sleep 10
     if ($separata) {
         Controlla ((Processi-Di $vecchia).Count -eq 0) 'nessun programma della versione di prima e'' rimasto acceso'
+    }
+    Controlla (Test-Path "$nuova\runtime\python\AI Brain.exe") 'la versione nuova e'' in Programs\Memdoria'
+
+    # Se l'aggiornamento non l'ha riaccesa (sessione senza schermo vero), la si accende come farebbe la persona.
+    if ((Processi-Di $nuova).Count -eq 0) { Accendi $nuova }
+    $datiNuovi = "$Local\Memdoria"
+    $p = Aspetta-Lettura $datiNuovi
+    Richiedi ($null -ne $p -and -not $p.error) "dopo l'aggiornamento la lettura finisce senza errori ($($p.error))"
+    if ($separata) {
+        # La cartella di prima la toglie l'installer, o al piu' l'app nuova alla sua apertura: qui l'app nuova e' accesa e ha letto.
         # L'installer toglie la cartella di prima DOPO aver copiato la nuova (1,8 GB di file): si aspetta che abbia finito, e si dice quanto.
         $inizioInstaller = Get-Date
         while ((Get-Date) -lt $inizioInstaller.AddMinutes(6) -and @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*AI-Brain-*windows-x64*' -or $_.Path -like '*\is-*.tmp\*' }).Count -gt 0) { Start-Sleep 5 }
@@ -338,13 +348,6 @@ function Scenario-Aggiornamento([string]$modo) {
         }
         Controlla (-not $esiste) "la cartella Programs\AI Brain e' stata tolta (rimasto: $rimasto)"
     }
-    Controlla (Test-Path "$nuova\runtime\python\AI Brain.exe") 'la versione nuova e'' in Programs\Memdoria'
-
-    # Se l'aggiornamento non l'ha riaccesa (sessione senza schermo vero), la si accende come farebbe la persona.
-    if ((Processi-Di $nuova).Count -eq 0) { Accendi $nuova }
-    $datiNuovi = "$Local\Memdoria"
-    $p = Aspetta-Lettura $datiNuovi
-    Richiedi ($null -ne $p -and -not $p.error) "dopo l'aggiornamento la lettura finisce senza errori ($($p.error))"
     if ($separata) {
         $link = Get-Item "$Local\AI Brain" -Force -ErrorAction SilentlyContinue
         Controlla ($null -ne $link -and $link.LinkType -eq 'Junction') 'trasloco fatto: "AI Brain" e'' un collegamento verso "Memdoria"'

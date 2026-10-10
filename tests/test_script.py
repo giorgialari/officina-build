@@ -403,3 +403,10 @@ def test_mac_aspetta_che_i_dati_spariscano_e_windows_nomina_solo_i_programmi_del
     assert 'for i in $(seq 1 12); do [ ! -d "$DATI" ] && break' in mac
     win = (r / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "programmi della cartella vecchia" in win and "$_.ExecutablePath -like \"$vecchia" in win
+
+
+def test_la_cartella_di_prima_si_controlla_dopo_che_la_app_nuova_e_accesa_e_ha_letto():
+    # La toglie l'installer o, al piu', l'app nuova all'apertura: il controllo viene dopo la lettura della versione nuova.
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert s.index("dopo l'aggiornamento la lettura finisce senza errori") < s.index("stata tolta (rimasto:")
