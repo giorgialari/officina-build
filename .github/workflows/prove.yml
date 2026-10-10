@@ -52,7 +52,7 @@ jobs:
         python -m pip install -q pytest-xdist -r codice/backend/requirements-dev.txt -r codice/deploy/comune/requirements-app.txt
         sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
     - name: Prove
-      run: scripts/riservato.sh backend codice '[0-9]+ passed' -- xvfb-run -a python -m pytest -n 4 --dist loadfile -q -m "not integration" backend/tests -p no:cacheprovider
+      run: scripts/riservato.sh backend codice '[0-9]+ passed' -- xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" python -m pytest -n 4 --dist loadfile -q -m "not integration" backend/tests -p no:cacheprovider
     - name: Dettaglio cifrato (solo se rosse)
       if: failure()
       uses: actions/upload-artifact@v4
@@ -109,7 +109,7 @@ jobs:
         AI_BRAIN_PROVE_RUNTIME_CONDIVISO: ${{ env.RT }}
         AI_BRAIN_LUCCHETTO_NEO4J: ${{ runner.temp }}/neo4j.lock
         AI_BRAIN_TEST_GRANDE: '1'  # anche la prova del brain grande (20.000 memorie), che altrimenti si salta
-      run: scripts/riservato.sh grafo codice '[0-9]+ (passed|failed)|verdi|rosse' -- xvfb-run -a python scripts/scala_prove.py --gradini neo4j --esiti "${{ runner.temp }}/esiti"
+      run: scripts/riservato.sh grafo codice '[0-9]+ (passed|failed)|verdi|rosse' -- xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" python scripts/scala_prove.py --gradini neo4j --esiti "${{ runner.temp }}/esiti"
     - name: Dettaglio cifrato (solo se rosse)
       if: failure()
       uses: actions/upload-artifact@v4

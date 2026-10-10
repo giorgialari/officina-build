@@ -444,3 +444,11 @@ def test_rilascio_windows_il_passo_dei_modelli_non_si_ferma_agli_avvisi_di_pytho
     inizio = s.index("    - name: Modelli della ricerca\n      shell: powershell")
     passo = s[inizio:s.index("    - name: App e impronte", inizio)]
     assert "$ErrorActionPreference = 'Continue'" in passo and "*> $null" not in passo
+
+
+def test_lo_schermo_finto_non_si_azzera_quando_si_chiude_l_ultimo_programma():
+    # Con 4 processi in parallelo, Xvfb che si azzera dava «Xlib ... Broken pipe» a chi si collegava dopo (giro 38070043954).
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "prove.yml").read_text(encoding="utf-8")
+    assert s.count("xvfb-run -a -s \"-screen 0 1280x1024x24 -noreset\"") == 2
+    assert "xvfb-run -a python" not in s
