@@ -410,3 +410,9 @@ def test_la_cartella_di_prima_si_controlla_dopo_che_la_app_nuova_e_accesa_e_ha_l
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert s.index("dopo l'aggiornamento la lettura finisce senza errori") < s.index("stata tolta (rimasto:")
+
+
+def test_windows_rifa_la_richiesta_di_aggiornamento_se_la_versione_di_prima_non_la_legge():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "$ultimaRichiesta" in s and "AddMinutes(2)" in s

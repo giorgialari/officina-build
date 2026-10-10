@@ -303,7 +303,16 @@ function Scenario-Aggiornamento([string]$modo) {
         $fine = (Get-Date).AddMinutes(15)
         $versioneNuova = (Get-Content "$Codice\VERSION" -TotalCount 1).Trim()
         function Versione-Installata { try { (Get-Content "$nuova\runtime\app\VERSION" -TotalCount 1 -ErrorAction Stop).Trim() } catch { '' } }
-        while ((Get-Date) -lt $fine -and (Versione-Installata) -ne $versioneNuova) { Start-Sleep 10 }
+        $ultimaRichiesta = Get-Date
+        while ((Get-Date) -lt $fine -and (Versione-Installata) -ne $versioneNuova) {
+            Start-Sleep 10
+            # La versione di prima legge la richiesta solo a certi momenti: se e' ancora li dopo 2 minuti la si rifa, come chi preme di nuovo «Aggiorna».
+            if ((Test-Path "$datiVecchi\aggiorna.request") -and ((Get-Date) -gt $ultimaRichiesta.AddMinutes(2))) {
+                Remove-Item "$datiVecchi\aggiorna.request" -Force -ErrorAction SilentlyContinue
+                Set-Content "$datiVecchi\aggiorna.request" 'aggiorna'
+                $ultimaRichiesta = Get-Date
+            }
+        }
         if ((Versione-Installata) -ne $versioneNuova) {
             # Per capire dove si ferma: cosa ha scaricato, quali installer sono accesi, quali file ha la cartella dei dati.
             $scaricati = (Get-ChildItem "$datiVecchi\aggiornamenti" -Force -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) $([math]::Round($_.Length / 1MB)) MB" }) -join ' ; '
