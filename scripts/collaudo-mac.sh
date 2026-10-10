@@ -91,10 +91,12 @@ api() {  # <dati> <metodo> <percorso> [corpo]
   else curl -fsS -X "$2" -H "Authorization: Bearer $token" "http://127.0.0.1:$porta$3"; fi
 }
 conta() { api "$1" GET /admin/stats | python3 -c "import json,sys;print(json.load(sys.stdin)['$2'])"; }
-collega_ai() {  # <dati> -> 0 se la voce di Memdoria compare nei file di Claude Code
-  echo connetti > "$1/connetti.request"
+seme_connessione() {  # <dati>: la persona ha risposto «si» alla domanda «Le collego a Memdoria?» (si salva in config.json)
+  mkdir -p "$1"; [ -f "$1/config.json" ] || echo '{"connect_answer": "yes"}' > "$1/config.json"
+}
+collega_ai() {  # <dati> -> 0 se la voce di Memdoria compare nei file di Claude Code (l'app collega dopo la lettura)
   local i
-  for i in $(seq 1 18); do sleep 5; grep -q 'ai-brain' "$HOME/.claude.json" 2>/dev/null && return 0; done
+  for i in $(seq 1 24); do grep -q 'ai-brain' "$HOME/.claude.json" 2>/dev/null && return 0; sleep 5; done
   return 1
 }
 lingua_si_cambia() {  # <dati>
@@ -122,6 +124,7 @@ DATI="$SUPPORTO/Memdoria"
 licenza /Applications/Memdoria.app "$DATI"
 CACHE_MODELLO="$RUNNER_TEMP/modello"
 if ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then mkdir -p "$DATI/modello-locale" && cp "$CACHE_MODELLO"/* "$DATI/modello-locale/" && echo "       modello preso dalla cache"; fi
+seme_connessione "$DATI"
 accendi /Applications/Memdoria.app/Contents/MacOS/Memdoria nuova
 aspetta_lettura "$DATI"; richiedi $? "la prima lettura finisce senza errori"
 C=$(conta "$DATI" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate: ${C:-0} (attese almeno 3)"
@@ -170,6 +173,7 @@ cp "$NUOVO" "$RUNNER_TEMP/feed/"
 VERSIONE_NUOVA=$(cat "$CODICE/VERSION")
 python3 "$(dirname "$0")/feed.py" "$CODICE" "$CHIAVE" "$RUNNER_TEMP/feed/ultima-versione.json" "$VERSIONE_NUOVA" mac "$RUNNER_TEMP/feed/$(basename "$NUOVO")" "file://$RUNNER_TEMP/feed/$(basename "$NUOVO")"
 export AI_BRAIN_UPDATES_URL="file://$RUNNER_TEMP/feed/ultima-versione.json"
+seme_connessione "$DATI_V"
 accendi "$APP_V/Contents/MacOS/$NOME_V" vecchia
 aspetta_lettura "$DATI_V"; richiedi $? "la versione $VER_V finisce la lettura"
 api "$DATI_V" POST /admin/remember '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
@@ -196,7 +200,9 @@ else
 fi
 DOPO=$(conta "$DATI_N" memories); [ "${DOPO:-0}" -ge "${PRIMA:-2}" ]; controlla $? "memorie intatte: prima ${PRIMA:-?}, dopo ${DOPO:-?}"
 C=$(conta "$DATI_N" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate dopo l'aggiornamento: ${C:-0}"
-[ "$(pgrep -fc 'tray.py')" -le 1 ]; controlla $? "una sola icona accesa (nessuna versione di prima rimasta)"
+ICONE=$(pgrep -f 'runtime/app/tray\.py$' | wc -l | tr -d ' ')
+[ "${ICONE:-0}" -le 1 ]; controlla $? "una sola icona accesa: ${ICONE:-0} (nessuna versione di prima rimasta)"
+if [ "${ICONE:-0}" -gt 1 ]; then mkdir -p "$RUNNER_TEMP/riservato"; ps -axo pid,ppid,lstart,command | grep 'tray\.py' | grep -v grep >> "$RUNNER_TEMP/riservato/dettagli.log"; fi
 if [ "$HA_VOCI" = 1 ]; then grep -q 'ai-brain' "$HOME/.claude.json" && ! grep -q 'Application Support/AI Brain' "$HOME/.claude.json"; controlla $? "le voci delle AI sono rimaste e non puntano piu' alla cartella vecchia"; fi
 lingua_si_cambia "$DATI_N"; controlla $? "dopo l'aggiornamento il cambio lingua funziona"
 pagina_nel_browser "$DATI_N" "dopo l'aggiornamento"

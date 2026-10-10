@@ -201,3 +201,54 @@ def test_gli_script_python_hanno_sintassi_giusta():
 
     for script in SCRIPT.glob("*.py"):
         ast.parse(script.read_text(encoding="utf-8"))
+
+
+# --- «collega le AI»: la risposta «si» si mette prima del primo avvio, come se la persona avesse cliccato ----------------------
+def estrai_funzione_bash(nome):
+    testo = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    inizio = testo.index(f"{nome}() {{")
+    return testo[inizio:testo.index("\n}\n", inizio) + 3]
+
+
+def test_il_seme_della_connessione_mette_si_e_non_sovrascrive_una_scelta(tmp_path):
+    funzione = estrai_funzione_bash("seme_connessione")
+    nuova = tmp_path / "dati-nuovi"
+    subprocess.run(["bash", "-c", f'{funzione}\nseme_connessione "{nuova}"'], check=True)
+    assert json.loads((nuova / "config.json").read_text()) == {"connect_answer": "yes"}
+    scelta = tmp_path / "gia-scelta"
+    scelta.mkdir()
+    (scelta / "config.json").write_text('{"connect_answer": "no"}')
+    subprocess.run(["bash", "-c", f'{funzione}\nseme_connessione "{scelta}"'], check=True)
+    assert json.loads((scelta / "config.json").read_text()) == {"connect_answer": "no"}   # una scelta fatta resta
+
+
+def test_mac_il_seme_viene_prima_dell_avvio_dell_app():
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    for avvio in ('accendi /Applications/Memdoria.app/Contents/MacOS/Memdoria nuova', 'accendi "$APP_V/Contents/MacOS/$NOME_V" vecchia'):
+        assert avvio in mac
+        assert mac.index("seme_connessione", mac.index(avvio) - 120) < mac.index(avvio)
+    assert "connetti.request" not in mac, "la richiesta cancella la risposta e rimostra la domanda: senza schermo non ha risposta"
+
+
+def test_windows_il_seme_viene_prima_dell_avvio_e_non_si_manda_la_richiesta():
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert win.count("Seme-Connessione") >= 3
+    assert win.index("Seme-Connessione $dati\n    Accendi $app") > 0
+    assert "Seme-Connessione $datiVecchi\n    Accendi $vecchia" in win
+    assert "connetti.request" not in win
+
+
+def test_windows_prima_di_fermarsi_salva_i_dettagli():
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    richiedi = win[win.index("function Richiedi"):win.index("function Controlla")]
+    assert richiedi.index("Salva-Dettagli") < richiedi.index("throw")
+
+
+def test_mac_conta_come_icona_solo_il_processo_dell_icona():
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    assert "pgrep -fc 'tray.py'" not in mac
+    assert "runtime/app/tray" in mac and "ps -axo" in mac       # e se sono due, mostra quali
+
+
+def test_i_nomi_delle_prove_di_powershell_sono_ascii():
+    assert (RADICE / "tests" / "lettura.tests.ps1").read_text(encoding="utf-8").isascii()

@@ -17,9 +17,14 @@ $env:AI_BRAIN_LICENSE_URL = 'http://127.0.0.1:9/attiva'
 
 function Say($m) { Write-Host "`n=== $m" -ForegroundColor Cyan }
 # Un passo da cui dipende tutto il resto: se fallisce il collaudo si ferma qui.
+function Salva-Dettagli {
+    New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
+    foreach ($d in "$Local\AI Brain", "$Local\Memdoria") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
+}
+
 function Richiedi([bool]$ok, [string]$cosa) {
     Controlla $ok $cosa
-    if (-not $ok) { throw "STOP: senza questo passo il resto non ha senso ($cosa)" }
+    if (-not $ok) { Salva-Dettagli; throw "STOP: senza questo passo il resto non ha senso ($cosa)" }
 }
 
 function Controlla([bool]$ok, [string]$cosa) {
@@ -126,13 +131,18 @@ function Pagina-Nel-Browser([string]$dati, [string]$quando) {
     Controlla ($LASTEXITCODE -eq 0) "la pagina si apre nel browser e disegna il grafo ($quando): $($uscita | Select-Object -Last 1)"
 }
 
+function Seme-Connessione([string]$dati) {
+    # La persona ha risposto «si» alla domanda «Le collego a Memdoria?» (si salva in config.json, prima del primo avvio).
+    New-Item -ItemType Directory -Force $dati | Out-Null
+    if (-not (Test-Path "$dati\config.json")) { [IO.File]::WriteAllText("$dati\config.json", '{"connect_answer": "yes"}') }
+}
+
 function Collega-Ai([string]$dati) {
-    # «Collega le AI» della pagina: l'app scrive la sua voce nei file delle AI trovate (Claude Code, Antigravity...).
-    Set-Content "$dati\connetti.request" 'connetti'
-    $fine = (Get-Date).AddSeconds(90)
+    # L'app collega dopo la lettura: si aspetta la sua voce nei file di Claude Code (fino a 2 minuti).
+    $fine = (Get-Date).AddSeconds(120)
     while ((Get-Date) -lt $fine) {
-        Start-Sleep 5
         if ((Test-Path "$env:USERPROFILE\.claude.json") -and ((Get-Content "$env:USERPROFILE\.claude.json" -Raw) -match 'ai-brain')) { return $true }
+        Start-Sleep 5
     }
     return $false
 }
@@ -182,6 +192,7 @@ if ($ConPulita) {
     # Il modello di Memdoria AI (1,2 GB) arriva dalla cache della corsa, se c'e'; altrimenti lo scarica l'app e lo si tiene per la prossima.
     $cacheModello = "$env:RUNNER_TEMP\modello"
     if (Test-Path "$cacheModello\*.gguf") { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
+    Seme-Connessione $dati
     Accendi $app
     $p = Aspetta-Lettura $dati
     Richiedi ($null -ne $p -and -not $p.error) "la prima lettura finisce senza errori ($($p.error))"
@@ -251,6 +262,7 @@ function Scenario-Aggiornamento([string]$modo) {
         $env:AI_BRAIN_UPDATES_URL = "file:///" + (("$cartellaFeed\ultima-versione.json") -replace '\\', '/')
     }
     Metti-Licenza $vecchia $datiVecchi
+    Seme-Connessione $datiVecchi
     Accendi $vecchia
     $p = Aspetta-Lettura $datiVecchi
     Richiedi ($null -ne $p -and -not $p.error) "la versione di prima finisce la lettura ($($p.error))"
