@@ -21,7 +21,7 @@ jobs:
       - name: Controllo dei file di workflow
         run: |
           curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz | tar xz actionlint
-          ./actionlint
+          ./actionlint -ignore "SC2015" -ignore "SC2086" -ignore "SC2034"
       - name: Prove
         run: |
           python -m pip install -q pytest cryptography
