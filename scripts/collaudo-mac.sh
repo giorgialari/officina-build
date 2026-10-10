@@ -153,7 +153,9 @@ fi
 echo '{"dati": true, "backup": false}' > "$DATI/disinstalla.request"
 for i in $(seq 1 60); do sleep 5; pgrep -f "Contents/Resources/runtime" > /dev/null || break; done
 ! pgrep -f "Contents/Resources/runtime" > /dev/null; controlla $? "dopo la disinstallazione nessun programma e' acceso"
-[ ! -d "$DATI" ]; controlla $? "dopo la disinstallazione i dati sono stati tolti"
+# La cartella dei dati la toglie l'ultimo passo della disinstallazione, anche un attimo dopo che i programmi sono usciti.
+for i in $(seq 1 12); do [ ! -d "$DATI" ] && break; sleep 5; done
+[ ! -d "$DATI" ]; controlla $? "dopo la disinstallazione i dati sono stati tolti (rimasto: $(ls -A "$DATI" 2>/dev/null | head -5 | tr '\n' ' '))"
 ! grep -q 'ai-brain' "$HOME/.claude.json" 2>/dev/null; controlla $? "dopo la disinstallazione le voci delle AI sono state tolte"
 spegni
 rm -rf /Applications/Memdoria.app "$DATI"

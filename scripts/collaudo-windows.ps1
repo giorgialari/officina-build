@@ -332,8 +332,8 @@ function Scenario-Aggiornamento([string]$modo) {
         if ($esiste) {
             try { Remove-Item $vecchia -Recurse -Force -ErrorAction Stop; Write-Host '       NOTA: la cartella si e'' lasciata togliere a mano: nessun programma la teneva occupata' }
             catch {
-                $chi = (Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*AI Brain*' } | ForEach-Object { $_.Name }) -join ', '
-                Write-Host "       NOTA: la cartella e' occupata ($(([string]$_.Exception.Message).Substring(0, [Math]::Min(70, ([string]$_.Exception.Message).Length)))); programmi che nominano AI Brain: $chi"
+                $chi = (Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$vecchia\*" -or $_.CommandLine -like "*$vecchia*" } | ForEach-Object { "$($_.Name)($($_.ProcessId))" }) -join ', '
+                Write-Host "       NOTA: la cartella e' occupata ($(([string]$_.Exception.Message).Substring(0, [Math]::Min(230, ([string]$_.Exception.Message).Length)))); programmi della cartella vecchia: $chi"
             }
         }
         Controlla (-not $esiste) "la cartella Programs\AI Brain e' stata tolta (rimasto: $rimasto)"

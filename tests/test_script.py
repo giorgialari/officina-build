@@ -392,3 +392,12 @@ def test_il_lavoro_extra_ha_la_lingua_utf8_per_le_cartelle_con_gli_accenti():
     s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "prove.yml").read_text(encoding="utf-8")
     extra = s[s.index("  extra:"):s.index("  controlli-pagina:")]
     assert "LANG: C.UTF-8" in extra and "LC_ALL: C.UTF-8" in extra
+
+
+def test_mac_aspetta_che_i_dati_spariscano_e_windows_nomina_solo_i_programmi_della_cartella_vecchia():
+    import pathlib
+    r = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+    mac = (r / "collaudo-mac.sh").read_text(encoding="utf-8")
+    assert 'for i in $(seq 1 12); do [ ! -d "$DATI" ] && break' in mac
+    win = (r / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "programmi della cartella vecchia" in win and "$_.ExecutablePath -like \"$vecchia" in win
