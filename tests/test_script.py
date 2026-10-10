@@ -274,7 +274,7 @@ def test_windows_accetta_il_collegamento_ripara_in_italiano_e_in_inglese():
 def test_windows_aspetta_e_racconta_cosa_resta_della_cartella_vecchia():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert "stata tolta (rimasto:" in s and "$fineTolta" in s
+    assert "non ha piu' file (rimasto:" in s and "$fineTolta" in s
 
 
 def test_windows_dice_l_ultimo_passo_se_la_lettura_non_finisce():
@@ -283,7 +283,59 @@ def test_windows_dice_l_ultimo_passo_se_la_lettura_non_finisce():
     assert s.count("ultimoPasso") >= 3
 
 
-def test_mac_aspetta_il_grafo_fino_a_cinque_minuti_e_dice_le_memorie():
+def test_mac_aspetta_il_grafo_e_dice_le_memorie():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-mac.sh").read_text(encoding="utf-8")
-    assert "seq 1 30); do E=$(conta" in s and "active_memories" in s
+    assert "do E=$(conta" in s and "active_memories" in s
+
+
+def test_workflow_mettono_in_cache_browser_pip_e_npm_senza_percorsi_con_due_punti():
+    import pathlib, re
+    w = pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows"
+    prove = (w / "prove.yml").read_text(encoding="utf-8")
+    rilascio = (w / "rilascio.yml").read_text(encoding="utf-8")
+    assert prove.count("path: ~/.cache/ms-playwright") == 2
+    assert prove.count("cache: npm") == 3 and prove.count("cache: pip") == 2
+    assert "browser-win-playwright-1.49.1" in rilascio and "browser-mac-playwright-1.49.1" in rilascio
+    for testo in (prove, rilascio):
+        for percorso in re.findall(r"^\s+path: (.*)$", testo, re.M):
+            assert ".." not in percorso, percorso
+
+
+def test_pagina_non_aspetta_la_rete_ferma_e_il_mac_non_perde_l_esito():
+    import pathlib
+    r = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+    assert "networkidle" not in (r / "pagina.mjs").read_text(encoding="utf-8")
+    mac = (r / "collaudo-mac.sh").read_text(encoding="utf-8")
+    assert "| tail -1); local r=$?" not in mac  # il codice di uscita era quello di tail, mai quello di node
+
+
+def test_collaudi_di_installazione_pulita_mettono_un_cliente_nel_grafo_loro_stessi():
+    import pathlib
+    r = pathlib.Path(__file__).resolve().parent.parent / "scripts"
+    win = (r / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert win.index("Seme-Connessione $dati\n    Accendi $app") < win.index("Salva-Memoria $dati 'Il cliente Verdi Srl") < win.index("il grafo si riempie")
+    mac = (r / "collaudo-mac.sh").read_text(encoding="utf-8")
+    inizio = mac.index("A. Installazione pulita")
+    assert mac.index("Verdi Srl", inizio) < mac.index("il grafo si riempie", inizio)
+
+
+def test_windows_aspetta_l_avvio_automatico_e_accetta_la_cartella_vuota():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "$fineAvvio" in s and "non ha piu' file" in s and "programmi accesi" in s
+
+
+def test_anche_la_versione_nuova_si_prende_dalla_cache_se_il_commit_e_lo_stesso():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
+    assert "matrix.nome == 'nuovo'" not in s and "matrix.nome != 'nuovo'" not in s
+    # la chiave porta il commit (la versione nuova e' gia' un commit, non un nome di ramo) e la chiave pubblica di prova
+    assert s.count("key: inst-win-${{ matrix.riferimento }}-${{ hashFiles('chiave-prova/pubblica.txt') }}") == 1
+    assert s.count("key: inst-mac-${{ matrix.riferimento }}-${{ hashFiles('chiave-prova/pubblica.txt') }}") == 1
+
+
+def test_il_commit_della_versione_nuova_e_risolto_prima_della_costruzione():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "risolvi-versioni.sh").read_text(encoding="utf-8")
+    assert '"nome": "nuovo", "riferimento": sha_nuovo' in s

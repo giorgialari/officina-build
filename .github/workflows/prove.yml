@@ -43,6 +43,10 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ steps.py.outputs.versione }}
+        cache: pip
+        cache-dependency-path: |
+          codice/backend/requirements*.txt
+          codice/deploy/comune/requirements-app.txt
     - name: Dipendenze e schermo finto
       run: |
         python -m pip install -q pytest-xdist -r codice/backend/requirements-dev.txt -r codice/deploy/comune/requirements-app.txt
@@ -78,6 +82,10 @@ jobs:
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ steps.v.outputs.PYTHON_VERSION }}
+        cache: pip
+        cache-dependency-path: |
+          codice/backend/requirements*.txt
+          codice/deploy/comune/requirements-app.txt
     - uses: actions/setup-java@v4
       with:
         distribution: temurin
@@ -124,6 +132,8 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ steps.node.outputs.versione }}
+        cache: npm
+        cache-dependency-path: codice/frontend/package-lock.json
     - name: Dipendenze
       run: scripts/riservato.sh dipendenze-pagina codice/frontend 'added [0-9]+ packages' -- npm ci --no-audit --no-fund
     - name: Controlli, prove e costruzione
@@ -148,6 +158,8 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ steps.node.outputs.versione }}
+        cache: npm
+        cache-dependency-path: codice/frontend/package-lock.json
     - name: Dipendenze
       run: scripts/riservato.sh dipendenze-pagina codice/frontend 'added [0-9]+ packages' -- npm ci --no-audit --no-fund
     - name: Costruisce la pagina (serve alle prove nel browser)
@@ -156,6 +168,11 @@ jobs:
         NX_DAEMON: 'false'
         NX_NO_CLOUD: 'true'
         NX_TUI: 'false'
+    - name: Browser già scaricato? (cache, la chiave è la versione di Playwright)
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: browser-linux-${{ hashFiles('codice/frontend/package-lock.json') }}-v1
     - name: Browser per le prove
       run: scripts/riservato.sh browser codice/frontend 'Chromium' -- npx playwright install --with-deps chromium
     - name: Comportamento della pagina nel browser
@@ -192,6 +209,8 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ steps.node.outputs.versione }}
+        cache: npm
+        cache-dependency-path: codice/frontend/package-lock.json
     - name: Dipendenze
       run: scripts/riservato.sh dipendenze-pagina codice/frontend 'added [0-9]+ packages' -- npm ci --no-audit --no-fund
     - name: Costruisce la pagina (serve alle prove nel browser)
@@ -200,6 +219,11 @@ jobs:
         NX_DAEMON: 'false'
         NX_NO_CLOUD: 'true'
         NX_TUI: 'false'
+    - name: Browser già scaricato? (cache, la chiave è la versione di Playwright)
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: browser-linux-${{ hashFiles('codice/frontend/package-lock.json') }}-v1
     - name: Browser per le prove
       run: scripts/riservato.sh browser codice/frontend 'Chromium' -- npx playwright install --with-deps chromium
     - name: Schermate (stili del grafo e del minigrafo, icone e pagine, confrontate con quelle di riferimento per Linux)

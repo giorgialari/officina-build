@@ -96,8 +96,7 @@ jobs:
         name: chiave-prova
         path: chiave
     - id: inst
-      name: 'Installer di questa versione gia'' costruito? (cache: una versione uscita non cambia)'
-      if: ${{ matrix.nome != 'nuovo' }}
+      name: 'Installer di questa versione gia'' costruito? (cache: stesso commit, stesso installer)'
       uses: actions/cache@v4
       with:
         path: pronto
@@ -117,7 +116,7 @@ jobs:
         rm -f ~/.ssh/codice
         echo "Codice: $(git -C codice rev-parse --short HEAD), versione $(cat codice/VERSION)"
     - name: Pezzi scaricati e runtime di base (cache)
-      if: ${{ matrix.nome == 'nuovo' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
       uses: actions/cache@v4
       with:
         path: ${{ env.AI_BRAIN_VENDOR }}
@@ -130,7 +129,7 @@ jobs:
           [ -f "$f" ] && sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
         done
         grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Modelli della ricerca (gli stessi dell'immagine del server, scaricati qui)
       shell: powershell
       working-directory: codice
@@ -145,7 +144,7 @@ jobs:
         $env:PYTHONPATH = (Get-Location).Path
         python scripts\download_models.py
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: App e impronte
       shell: powershell
       working-directory: codice
@@ -153,7 +152,7 @@ jobs:
         $ErrorActionPreference = 'Continue'
         powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 all
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Firma con la chiave di prova e installer
       shell: powershell
       working-directory: codice
@@ -166,9 +165,9 @@ jobs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 installer
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: L'installer nella cartella «pronto» (cache e allegato)
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
       shell: bash
       run: mkdir -p pronto && cp codice/deploy/dist/AI-Brain-*-windows-x64.exe pronto/
     - uses: actions/upload-artifact@v4
@@ -208,6 +207,11 @@ jobs:
         git -C codice checkout --quiet "$RIFERIMENTO"
         rm -f ~/.ssh/codice
         python -m pip install --quiet cryptography
+    - name: Browser già scaricato? (cache, la chiave è la versione di Playwright)
+      uses: actions/cache@v4
+      with:
+        path: ~\AppData\Local\ms-playwright
+        key: browser-win-playwright-1.49.1-v1
     - name: Browser per guardare la pagina vera
       shell: powershell
       working-directory: scripts
@@ -290,8 +294,7 @@ jobs:
         name: chiave-prova-mac
         path: chiave
     - id: inst
-      name: 'Installer di questa versione gia'' costruito? (cache: una versione uscita non cambia)'
-      if: ${{ matrix.nome != 'nuovo' }}
+      name: 'Installer di questa versione gia'' costruito? (cache: stesso commit, stesso installer)'
       uses: actions/cache@v4
       with:
         path: pronto
@@ -301,7 +304,7 @@ jobs:
         riferimento: ${{ matrix.riferimento }}
         chiave: ${{ secrets.CODICE_CHIAVE }}
     - name: Pezzi scaricati e runtime di base (cache)
-      if: ${{ matrix.nome == 'nuovo' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
       uses: actions/cache@v4
       with:
         path: ${{ env.AI_BRAIN_VENDOR }}
@@ -314,16 +317,16 @@ jobs:
           [ -f "$f" ] && sed -i '' "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
         done
         grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Node (quello dell'app) e pagine
       run: |
         NODE=$(grep '^NODE_VERSION=' codice/deploy/comune/versions.env | cut -d= -f2 | tr -d v)
         echo "NODE=$NODE" >> "$GITHUB_ENV"
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - uses: actions/setup-node@v4
       with:
         node-version: ${{ env.NODE }}
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Pagine
       run: |
         if [ -f codice/deploy/comune/pagine.sh ]; then
@@ -331,18 +334,18 @@ jobs:
         else
           echo "Questa versione non ha pagine.sh: la pagina la costruisce lo script del dmg"
         fi
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: uv (lo usa lo script del dmg per Python)
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
         test -x "$HOME/.local/bin/uv" && echo "uv pronto"
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Modelli della ricerca
       run: |
         python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
         M="$AI_BRAIN_VENDOR/common/models"; mkdir -p "$M"
         cd codice && FASTEMBED_CACHE_PATH="$M" HF_HOME="$M/huggingface" HF_HUB_DISABLE_XET=1 PYTHONPATH="$PWD" python3 scripts/download_models.py > /dev/null 2>&1
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Il dmg (firmato con la chiave di prova)
       env:
         AI_BRAIN_CHIAVE_LICENZE: ${{ github.workspace }}/chiave/chiave-privata.pem
@@ -353,9 +356,9 @@ jobs:
         [ -d "$RUNNER_TEMP/pagine" ] || unset AI_BRAIN_PAGINE
         mkdir -p "$HOME/.config/ai-brain-licenze" && cp "$AI_BRAIN_CHIAVE_LICENZE" "$HOME/.config/ai-brain-licenze/chiave-privata.pem"
         scripts/riservato.sh dmg codice 'dmg|Pronto' -- bash deploy/mac/build-mac.sh release
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: L'installer nella cartella «pronto» (cache e allegato)
-      if: ${{ matrix.nome == 'nuovo' || steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
       shell: bash
       run: mkdir -p pronto && cp "$AI_BRAIN_DIST"/AI-Brain-*-mac-arm64.dmg pronto/
     - uses: actions/upload-artifact@v4
@@ -397,6 +400,11 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '22'
+    - name: Browser già scaricato? (cache, la chiave è la versione di Playwright)
+      uses: actions/cache@v4
+      with:
+        path: ~/Library/Caches/ms-playwright
+        key: browser-mac-playwright-1.49.1-v1
     - name: Browser per guardare la pagina vera
       working-directory: scripts
       run: |

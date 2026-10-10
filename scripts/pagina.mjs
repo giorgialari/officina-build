@@ -9,8 +9,10 @@ const errori = [];
 const browser = await chromium.launch();
 const pagina = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 pagina.on('pageerror', (e) => errori.push(String(e).slice(0, 120)));
-const risposta = await pagina.goto(indirizzo, { waitUntil: 'networkidle', timeout: 90_000 });
-await pagina.waitForTimeout(8000);
+const risposta = await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+// La pagina tiene sempre una richiesta aperta (aggiornamenti dal vivo): non esiste «rete ferma». Si aspetta il disegno.
+await pagina.waitForSelector('canvas, svg', { timeout: 60_000 }).catch(() => {});
+await pagina.waitForTimeout(3000);
 const titolo = await pagina.title();
 const disegno = await pagina.locator('canvas, svg').count();
 await pagina.screenshot({ path: `${prefisso}.png`, fullPage: true });
