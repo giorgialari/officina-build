@@ -1,0 +1,146 @@
+# Collaudo di Windows su macchine pulite di GitHub: costruisce la versione di prima e la nuova con una CHIAVE DI PROVA
+# (generata a ogni corsa, mai quella vera), poi installa, aggiorna e controlla. Non pubblica niente.
+name: Collaudo Windows
+run-name: Collaudo Windows · ${{ inputs.nuovo }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      nuovo:
+        description: "Ramo o commit del codice da collaudare"
+        default: main
+      vecchio:
+        description: "Commit della versione di prima (di base la 1.0.30)"
+        default: 2490f8a
+
+permissions:
+  contents: read
+
+jobs:
+  chiavi:
+    name: Chiave di prova
+    runs-on: ubuntu-24.04
+    outputs:
+      pubblica: ${{ steps.k.outputs.pubblica }}
+    steps:
+      - id: k
+        run: |
+          pip install --quiet cryptography
+          python - <<'PY'
+          import base64, os
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          k = Ed25519PrivateKey.generate()
+          pem = k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+          open("chiave-privata.pem", "wb").write(pem)
+          pub = k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+          open(os.environ["GITHUB_OUTPUT"], "a").write("pubblica=" + base64.urlsafe_b64encode(pub).decode().rstrip("=") + "\n")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chiave-prova
+          path: chiave-privata.pem
+          retention-days: 1
+
+  costruisci:
+    name: Costruisce ${{ matrix.nome }}
+    needs: chiavi
+    runs-on: windows-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - nome: vecchio
+            riferimento: ${{ inputs.vecchio }}
+          - nome: nuovo
+            riferimento: ${{ inputs.nuovo }}
+    env:
+      AI_BRAIN_VENDOR: ${{ github.workspace }}\..\vendor
+      AI_BRAIN_BUILD: ${{ github.workspace }}\..\build
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: chiave-prova
+          path: chiave
+      - name: Codice (copia di sola lettura, chiave dedicata)
+        env:
+          CODICE_CHIAVE: ${{ secrets.CODICE_CHIAVE }}
+          RIFERIMENTO: ${{ matrix.riferimento }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$CODICE_CHIAVE" > ~/.ssh/codice
+          chmod 600 ~/.ssh/codice
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/codice -o IdentitiesOnly=yes"
+          git clone --quiet git@github.com:giorgialari/ai-brain.git codice
+          git -C codice checkout --quiet "$RIFERIMENTO"
+          rm -f ~/.ssh/codice
+          echo "Codice: $(git -C codice rev-parse --short HEAD), versione $(cat codice/VERSION)"
+      - name: Chiave pubblica di prova al posto di quella vera
+        env:
+          PUBBLICA: ${{ needs.chiavi.outputs.pubblica }}
+        run: |
+          sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" codice/backend/app/integrita.py codice/backend/app/licenza.py
+          grep -c "$PUBBLICA" codice/backend/app/integrita.py codice/backend/app/licenza.py
+      - name: App e impronte
+        shell: powershell
+        working-directory: codice
+        run: |
+          $ErrorActionPreference = 'Continue'
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 all
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Firma con la chiave di prova e installer
+        shell: powershell
+        working-directory: codice
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $versione = (Get-Content VERSION -TotalCount 1).Trim()
+          $elenco = "$env:AI_BRAIN_BUILD\AI Brain\runtime\app\impronte.json"
+          python -m pip install --quiet cryptography
+          python backend\app\integrita.py firma $elenco --chiave "$env:GITHUB_WORKSPACE\chiave\chiave-privata.pem" --versione $versione --sistema windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.nome }}
+          path: codice/deploy/dist/AI-Brain-*-windows-x64.exe
+          retention-days: 1
+          compression-level: 0
+
+  collauda:
+    name: Installa, aggiorna e controlla
+    needs: costruisci
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: pezzi
+      - name: Codice per fare le licenze di prova (solo licenza.py)
+        shell: bash
+        env:
+          CODICE_CHIAVE: ${{ secrets.CODICE_CHIAVE }}
+          RIFERIMENTO: ${{ inputs.nuovo }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$CODICE_CHIAVE" > ~/.ssh/codice
+          chmod 600 ~/.ssh/codice
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i $HOME/.ssh/codice -o IdentitiesOnly=yes" git clone --quiet git@github.com:giorgialari/ai-brain.git codice
+          git -C codice checkout --quiet "$RIFERIMENTO"
+          rm -f ~/.ssh/codice
+          python -m pip install --quiet cryptography
+      - name: Collaudo
+        shell: powershell
+        run: |
+          $vecchio = (Get-ChildItem pezzi\installer-vecchio\*.exe).FullName
+          $nuovo = (Get-ChildItem pezzi\installer-nuovo\*.exe).FullName
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 `
+            -Vecchio $vecchio -Nuovo $nuovo -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem"
+          exit $LASTEXITCODE
