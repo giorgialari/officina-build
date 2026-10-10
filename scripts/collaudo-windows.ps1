@@ -90,7 +90,7 @@ function Aspetta-Lettura([string]$dati, [int]$minuti = 12) {
     while ((Get-Date) -lt $fine) {
         Start-Sleep 10
         Remove-Item "$dati\lingua-da-scegliere" -Recurse -Force -ErrorAction SilentlyContinue   # come scegliere la lingua
-        try { $p = Get-Content "$dati\progress.json" -Raw -Encoding UTF8 | ConvertFrom-Json; if ($p.done -or $p.error) { return $p } } catch { }
+        try { $p = Get-Content "$dati\progress.json" -Raw -Encoding UTF8 | ConvertFrom-Json; $fatto = $p.done -or ($p.events | Where-Object { $_.text -match '^(Grafo|Pronto|Fatto)' }); if ($fatto -or $p.error) { return $p } } catch { }
     }
     return $null
 }

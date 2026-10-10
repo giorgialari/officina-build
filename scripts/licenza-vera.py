@@ -26,13 +26,13 @@ try:
         controlla(True, "un'email senza licenza viene rifiutata con la frase giusta")
     stato = licenza.activate_email(dati, email, versione)
     controlla(stato.get("state") == "ok", f"l'attivazione con l'email funziona (stato {stato.get('state')})")
-    controlla(licenza.status(dati)["state"] == "ok", "la chiave arrivata vale su questo computer")
+    controlla(licenza.status(dati, kind="computer")["state"] == "ok", "la chiave arrivata vale su questo computer")
     controlla(licenza.read_check(dati) is not None, "con la chiave arriva il primo controllo firmato")
     (dati / licenza.CHECK_NAME).unlink(missing_ok=True)
     risposta = licenza.check_online(dati, versione)
     controlla(risposta.get("state") == "ok", f"il controllo periodico risponde «ok» ({risposta.get('state')})")
     controlla((dati / licenza.CHECK_NAME).exists(), "il controllo firmato viene salvato")
-    controlla(licenza.status(dati)["state"] == "ok", "dopo il controllo la licenza vale ancora")
+    controlla(licenza.status(dati, kind="computer")["state"] == "ok", "dopo il controllo la licenza vale ancora")
 
     # Il tempo senza rete, simulato: tolleranza di 3 giorni dall'ultimo controllo firmato. Ogni prova su una copia, perche'
     # la licenza si ricorda l'ultima ora vista e un salto in avanti falserebbe le prove dopo.
@@ -43,7 +43,7 @@ try:
     def a_distanza(ore, prove_dopo=None):
         copia = Path(tempfile.mkdtemp()) / "dati"
         shutil.copytree(dati, copia)
-        return licenza.license_gate(copia, now_ts=quando + ore * ORA), copia
+        return licenza.license_gate(copia, now_ts=quando + ore * ORA, kind="computer"), copia
     stato, _ = a_distanza(0.1)
     controlla(stato["state"] == "ok" and not stato.get("warning"), "subito dopo un controllo: vale, senza avviso")
     stato, _ = a_distanza(26)
@@ -55,7 +55,7 @@ try:
     controlla(bool(stato.get("message")), "e dice alla persona cosa fare")
     # Un controllo che torna a funzionare rimette tutto a posto (qui il servizio vero risponde ora).
     risposta = licenza.check_online(copia, versione)
-    controlla(risposta.get("state") == "ok" and licenza.license_gate(copia)["state"] == "ok", "tornata la rete, il controllo rimette la licenza a posto")
+    controlla(risposta.get("state") == "ok" and licenza.license_gate(copia, kind="computer")["state"] == "ok", "tornata la rete, il controllo rimette la licenza a posto")
     stato, _ = a_distanza(-50)
     controlla(stato["state"] == "disconnected", "orologio portato indietro: non allunga la licenza («disconnessa»)")
     stato, _ = a_distanza(24 * 40)
@@ -71,7 +71,7 @@ def non_vale(email, cosa):
     cartella = Path(tempfile.mkdtemp())
     try:
         stato = licenza.activate_email(cartella, email, versione)
-        gate = licenza.license_gate(cartella)
+        gate = licenza.license_gate(cartella, kind="computer")
         risposta = licenza.check_online(cartella, versione)
         ok = stato.get("state") != "ok" or gate.get("state") != "ok" or risposta.get("state") not in ("ok", "offline")
         controlla(ok, f"{cosa}: non vale (stato {stato.get('state')}, controllo {risposta.get('state')})")
@@ -100,7 +100,7 @@ if os.environ.get("EMAIL_SERVER"):
         stato = licenza.activate_email(server, email_s, versione, machine=macchina_server, kind="server", code=codice_download["codice"])
         controlla(stato.get("state") == "ok", f"il posto server si attiva con email e codice (stato {stato.get('state')})")
         controlla(licenza.status(server, machine=macchina_server, kind="server")["state"] == "ok", "la chiave del server vale sul server")
-        controlla(licenza.status(server, machine=macchina_server)["state"] != "ok", "la stessa chiave non vale come licenza di un computer")
+        controlla(licenza.status(server, machine=macchina_server, kind="computer")["state"] != "ok", "la stessa chiave non vale come licenza di un computer")
         risposta = licenza.check_online(server, versione, machine=macchina_server, kind="server")
         controlla(risposta.get("state") == "ok", f"il controllo periodico del server risponde ok ({risposta.get('state')})")
     except licenza.LicenseError as errore:

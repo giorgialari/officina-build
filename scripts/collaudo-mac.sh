@@ -70,7 +70,12 @@ aspetta_lettura() {  # <dati> -> 0 se finita senza errori
   for i in $(seq 1 90); do
     sleep 10; rm -rf "$dati/lingua-da-scegliere"
     if [ -f "$dati/progress.json" ]; then
-      python3 -c "import json,sys;d=json.load(open(sys.argv[1]));sys.exit(0 if d.get('done') and not d.get('error') else (2 if d.get('error') else 1))" "$dati/progress.json"
+      # «finita» = done (la conferma della finestra) oppure, senza finestra, gli eventi arrivati a «Grafo»/«Pronto»/«Fatto»
+      python3 -c "
+import json,sys
+d=json.load(open(sys.argv[1]))
+fatto=bool(d.get('done')) or any(str(e.get('text','')).startswith(('Grafo','Pronto','Fatto')) for e in d.get('events',[]))
+sys.exit(2 if d.get('error') else (0 if fatto else 1))" "$dati/progress.json"
       case $? in 0) return 0;; 2) return 2;; esac
     fi
   done
