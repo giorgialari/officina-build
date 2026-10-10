@@ -295,7 +295,7 @@ def test_workflow_mettono_in_cache_browser_pip_e_npm_senza_percorsi_con_due_punt
     prove = (w / "prove.yml").read_text(encoding="utf-8")
     rilascio = (w / "rilascio.yml").read_text(encoding="utf-8")
     assert prove.count("path: ~/.cache/ms-playwright") == 2
-    assert prove.count("cache: npm") == 3 and prove.count("cache: pip") == 2
+    assert prove.count("cache: npm") == 3 and prove.count("cache: pip") == 3
     assert "browser-win-playwright-1.49.1" in rilascio and "browser-mac-playwright-1.49.1" in rilascio
     for testo in (prove, rilascio):
         for percorso in re.findall(r"^\s+path: (.*)$", testo, re.M):
@@ -361,3 +361,13 @@ def test_windows_accende_con_le_opzioni_del_collegamento_di_quella_versione():
     assert "CreateShortcut" in corpo and "$collegamento.Arguments" in corpo
     assert "TargetPath -like" in corpo  # solo se il collegamento punta a QUESTA cartella
     assert "'-E', '-s', '-S'" in corpo   # e se non c'e', le opzioni di oggi
+
+
+def test_le_prove_che_si_saltavano_girano_su_github():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "prove.yml").read_text(encoding="utf-8")
+    assert "AI_BRAIN_TEST_SSHD: '1'" in s and "AI_BRAIN_RUNTIME_PROVA: ${{ env.RT }}" in s
+    assert "AI_BRAIN_TEST_GRANDE: '1'" in s
+    for prova in ("test_online_ssh.py", "test_grafo_accenti.py", "test_riservatezza.py"):
+        assert prova in s
+    assert "openssh-server" in s

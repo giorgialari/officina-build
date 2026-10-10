@@ -108,12 +108,66 @@ jobs:
       env:
         AI_BRAIN_PROVE_RUNTIME_CONDIVISO: ${{ env.RT }}
         AI_BRAIN_LUCCHETTO_NEO4J: ${{ runner.temp }}/neo4j.lock
+        AI_BRAIN_TEST_GRANDE: '1'  # anche la prova del brain grande (20.000 memorie), che altrimenti si salta
       run: scripts/riservato.sh grafo codice '[0-9]+ (passed|failed)|verdi|rosse' -- xvfb-run -a python scripts/scala_prove.py --gradini neo4j --esiti "${{ runner.temp }}/esiti"
     - name: Dettaglio cifrato (solo se rosse)
       if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: registri-cifrati-grafo
+        path: ${{ runner.temp }}/riservato/*.cms
+        retention-days: 3
+  extra:
+    name: Prove con SSH, programma vero e modello della ricerca
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RT: ${{ github.workspace }}/../rt
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ inputs.riferimento }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+    - name: Versioni (da versions.env)
+      id: v
+      run: |
+        for k in PYTHON_VERSION NEO4J_URL NEO4J_SHA256; do
+          echo "$k=$(grep "^$k=" codice/deploy/comune/versions.env | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+        done
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ steps.v.outputs.PYTHON_VERSION }}
+        cache: pip
+        cache-dependency-path: |
+          codice/backend/requirements*.txt
+          codice/deploy/comune/requirements-app.txt
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+    - name: Dipendenze e server SSH di prova
+      run: |
+        sudo apt-get update -qq && sudo apt-get install -y -qq openssh-server > /dev/null
+        python -m pip install -q -r codice/backend/requirements-dev.txt -r codice/deploy/comune/requirements-app.txt
+    - name: Neo4j del pacchetto e modelli (dove li cercano le prove)
+      run: |
+        mkdir -p "$RT/neo4j" codice/deploy/comune/vendor/common/models
+        ln -s "$JAVA_HOME" "$RT/jre"
+        curl -sSfL -o neo4j.tar.gz "${{ steps.v.outputs.NEO4J_URL }}"
+        echo "${{ steps.v.outputs.NEO4J_SHA256 }}  neo4j.tar.gz" | sha256sum -c -
+        tar -xzf neo4j.tar.gz --strip-components=1 -C "$RT/neo4j" && rm neo4j.tar.gz
+        cd codice && PYTHONPATH="$PWD" FASTEMBED_CACHE_PATH="$PWD/deploy/comune/vendor/common/models" python scripts/download_models.py > /dev/null 2>&1
+    - name: Le prove che altrimenti si saltano (SSH, programma vero, modello della ricerca)
+      env:
+        AI_BRAIN_TEST_SSHD: '1'
+        AI_BRAIN_RUNTIME_PROVA: ${{ env.RT }}
+      run: scripts/riservato.sh extra codice '[0-9]+ passed' -- python -m pytest -q -p no:cacheprovider -rs backend/tests/test_online_ssh.py backend/tests/test_grafo_accenti.py backend/tests/test_riservatezza.py
+    - name: Dettaglio cifrato (solo se rosse)
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: registri-cifrati-extra
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
   controlli-pagina:
