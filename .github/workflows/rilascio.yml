@@ -224,8 +224,8 @@ jobs:
     - name: Collaudo
       shell: powershell
       run: |
-        $vecchio = (Get-ChildItem pezzi\installer-${{ matrix.vecchia }}\*.exe).FullName
         $nuovo = (Get-ChildItem pezzi\installer-nuovo\*.exe).FullName
+        $vecchio = if ('${{ matrix.vecchia }}' -eq 'nessuna') { $nuovo } else { (Get-ChildItem pezzi\installer-${{ matrix.vecchia }}\*.exe).FullName }
         $pulita = '${{ matrix.pulita }}' -eq 'true'
         if ($pulita) {
           powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 -Vecchio $vecchio -Nuovo $nuovo -Modo '${{ matrix.modo }}' -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem" -ConPulita
@@ -411,7 +411,8 @@ jobs:
         key: modello-ai-mac-qwen35-2b-q4km-v1
     - name: Collaudo
       run: |
-        VECCHIO=$(ls pezzi/dmg-${{ matrix.vecchia }}/*.dmg); NUOVO=$(ls pezzi/dmg-nuovo/*.dmg)
+        NUOVO=$(ls pezzi/dmg-nuovo/*.dmg)
+        if [ "${{ matrix.vecchia }}" = nessuna ]; then VECCHIO=$NUOVO; else VECCHIO=$(ls pezzi/dmg-${{ matrix.vecchia }}/*.dmg); fi
         CON_PULITA=${{ matrix.pulita }} SOLO_PULITA=${{ matrix.solo_pulita }} bash scripts/collaudo-mac.sh "$PWD/$VECCHIO" "$PWD/$NUOVO" "$PWD/codice" "$PWD/pezzi/chiave-prova-mac/chiave-privata.pem"
     - name: Dettaglio cifrato (solo se rosso)
       if: failure()
