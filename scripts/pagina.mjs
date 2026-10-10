@@ -1,6 +1,9 @@
 // Apre la pagina vera di Memdoria in un browser e controlla: si carica, niente errori di script, il grafo viene disegnato.
 // Uso: node pagina.mjs <indirizzo> <prefisso-schermate>   (le schermate vanno in un allegato cifrato, mai in chiaro)
-import { chromium } from 'playwright';
+// Qualunque guasto si dice in UNA riga (la causa, senza tutta la pila), poi si esce con errore.
+process.on('uncaughtException', (e) => { console.log(`MALE: ${String(e?.message ?? e).split('\n').slice(0, 2).join(' | ').slice(0, 300)}`); process.exit(1); });
+process.on('unhandledRejection', (e) => { console.log(`MALE: ${String(e?.message ?? e).split('\n').slice(0, 2).join(' | ').slice(0, 300)}`); process.exit(1); });
+const { chromium } = await import('playwright');
 const [indirizzo, prefisso] = process.argv.slice(2);
 const errori = [];
 const browser = await chromium.launch();

@@ -252,3 +252,38 @@ def test_mac_conta_come_icona_solo_il_processo_dell_icona():
 
 def test_i_nomi_delle_prove_di_powershell_sono_ascii():
     assert (RADICE / "tests" / "lettura.tests.ps1").read_text(encoding="utf-8").isascii()
+
+
+def test_pagina_dice_il_guasto_in_una_riga_anche_se_il_browser_manca():
+    # Su Windows il guasto si vedeva solo come «Node.js v22»: ora la causa sta in una riga che comincia con MALE.
+    import subprocess, pathlib, shutil
+    if not shutil.which("node"):
+        return
+    radice = pathlib.Path(__file__).resolve().parent.parent
+    r = subprocess.run(["node", str(radice / "scripts" / "pagina.mjs"), "http://127.0.0.1:1/", "x"], capture_output=True, text=True, cwd="/")
+    assert r.returncode != 0
+    assert r.stdout.strip().splitlines()[-1].startswith("MALE:"), r.stdout + r.stderr
+
+
+def test_windows_accetta_il_collegamento_ripara_in_italiano_e_in_inglese():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "Ripara Memdoria.lnk" in s and "Repair Memdoria.lnk" in s
+
+
+def test_windows_aspetta_e_racconta_cosa_resta_della_cartella_vecchia():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "stata tolta (rimasto:" in s and "$fineTolta" in s
+
+
+def test_windows_dice_l_ultimo_passo_se_la_lettura_non_finisce():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert s.count("ultimoPasso") >= 3
+
+
+def test_mac_aspetta_il_grafo_fino_a_cinque_minuti_e_dice_le_memorie():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-mac.sh").read_text(encoding="utf-8")
+    assert "seq 1 30); do E=$(conta" in s and "active_memories" in s

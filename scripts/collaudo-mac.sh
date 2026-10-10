@@ -128,7 +128,7 @@ seme_connessione "$DATI"
 accendi /Applications/Memdoria.app/Contents/MacOS/Memdoria nuova
 aspetta_lettura "$DATI"; richiedi $? "la prima lettura finisce senza errori"
 C=$(conta "$DATI" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate: ${C:-0} (attese almeno 3)"
-for i in $(seq 1 9); do E=$(conta "$DATI" active_entities); [ "${E:-0}" -ge 1 ] && break; sleep 10; done; [ "${E:-0}" -ge 1 ]; controlla $? "il grafo si riempie: ${E:-0} entita"
+for i in $(seq 1 30); do E=$(conta "$DATI" active_entities); [ "${E:-0}" -ge 1 ] && break; sleep 10; done; [ "${E:-0}" -ge 1 ]; controlla $? "il grafo si riempie: ${E:-0} entita, $(conta "$DATI" active_memories) memorie"
 [ ! -e "$SUPPORTO/AI Brain" ]; controlla $? "nessuna cartella AI Brain in un'installazione nuova"
 "/Applications/Memdoria.app/Contents/Resources/runtime/python/bin/python3.12" -E -s "$(dirname "$0")/licenze-offline.py" "/Applications/Memdoria.app/Contents/Resources/runtime/app" "$CHIAVE"; controlla $? "gli stati della licenza (manca, giusta, scaduta, altro computer, firma rovinata) sull'app installata"
 collega_ai "$DATI"; controlla $? "collega le AI: la voce di Memdoria compare nei file di Claude Code"

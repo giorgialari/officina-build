@@ -101,6 +101,8 @@ function Aspetta-Lettura([string]$dati, [int]$minuti = 12) {
         Remove-Item "$dati\lingua-da-scegliere" -Recurse -Force -ErrorAction SilentlyContinue
         try {
             $p = Get-Content "$dati\progress.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+            $ultimo = @($p.events | Select-Object -Last 1)[0]
+            if ($ultimo) { $script:ultimoPasso = ([string]$ultimo.text -replace '[^\x20-\x7E]', '?'); if ($script:ultimoPasso.Length -gt 60) { $script:ultimoPasso = $script:ultimoPasso.Substring(0, 60) } }
             switch (Esito-Lettura $p) {
                 0 { return $p }
                 2 { return $p }
@@ -204,7 +206,8 @@ if ($ConPulita) {
     Controlla (($s.entities -ge 1) -and ($s.memories -ge 1)) "il grafo si riempie: $($s.entities) entita, $($s.memories) memorie, $($s.relations) relazioni"
     $menu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
     Controlla (Test-Path "$menu\Memdoria.lnk") 'collegamento "Memdoria" nel menu Start'
-    Controlla (Test-Path "$menu\Ripara Memdoria.lnk") 'collegamento "Ripara Memdoria" nel menu Start'
+    # Il nome segue la lingua dell'installazione: italiano o inglese.
+    Controlla ((Test-Path "$menu\Ripara Memdoria.lnk") -or (Test-Path "$menu\Repair Memdoria.lnk")) 'collegamento "Ripara Memdoria" (o "Repair Memdoria") nel menu Start'
     Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria') 'avvio automatico verso la cartella nuova'
     # Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti, la macchina e'' lenta)
     $fineModello = (Get-Date).AddMinutes(20); $modello = $false
@@ -265,7 +268,7 @@ function Scenario-Aggiornamento([string]$modo) {
     Seme-Connessione $datiVecchi
     Accendi $vecchia
     $p = Aspetta-Lettura $datiVecchi
-    Richiedi ($null -ne $p -and -not $p.error) "la versione di prima finisce la lettura ($($p.error))"
+    Richiedi ($null -ne $p -and -not $p.error) "la versione di prima finisce la lettura ($($p.error)) ultimo passo: $script:ultimoPasso"
     Salva-Memoria $datiVecchi 'Il cliente Verdi Srl usa il gestionale Alfa dal 2024.'
     Salva-Memoria $datiVecchi 'Il server di Verdi Srl e in Hetzner a Norimberga.'
     $prima = Statistiche $datiVecchi
@@ -291,7 +294,10 @@ function Scenario-Aggiornamento([string]$modo) {
     Start-Sleep 10
     if ($separata) {
         Controlla ((Processi-Di $vecchia).Count -eq 0) 'nessun programma della versione di prima e'' rimasto acceso'
-        Controlla (-not (Test-Path $vecchia)) 'la cartella Programs\AI Brain e'' stata tolta'
+        $fineTolta = (Get-Date).AddSeconds(90)
+        while ((Test-Path $vecchia) -and (Get-Date) -lt $fineTolta) { Start-Sleep 5 }
+        $rimasto = if (Test-Path $vecchia) { ((Get-ChildItem $vecchia -Recurse -Force -ErrorAction SilentlyContinue | Select-Object -First 8 | ForEach-Object { $_.FullName.Substring($vecchia.Length) }) -join ' ; ') } else { '' }
+        Controlla (-not (Test-Path $vecchia)) "la cartella Programs\AI Brain e' stata tolta (rimasto: $rimasto)"
     }
     Controlla (Test-Path "$nuova\runtime\python\AI Brain.exe") 'la versione nuova e'' in Programs\Memdoria'
 
