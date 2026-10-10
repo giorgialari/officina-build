@@ -457,5 +457,6 @@ def test_lo_schermo_finto_non_si_azzera_quando_si_chiude_l_ultimo_programma():
 def test_windows_riavvia_la_versione_di_prima_se_l_aggiornamento_dall_app_non_parte():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert "$riavvii -lt 2" in s and "AddMinutes(5)" in s and "riavvio la versione di prima" in s
+    assert "$riavvii -lt 2" in s and "$ultimoRiavvio.AddMinutes(3)" in s and "riavvio la versione di prima" in s
+    assert "$fine = (Get-Date).AddMinutes(9)" in s  # il tempo massimo e' stretto: 15 minuti erano attesa sprecata
     assert "(Processi-Di $nuova).Count -eq 0 -and (Test-Path $nuova)" in s  # niente accensione di una cartella che non c'e'

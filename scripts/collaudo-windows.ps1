@@ -300,16 +300,16 @@ function Scenario-Aggiornamento([string]$modo) {
         Installa $Nuovo "$env:RUNNER_TEMP\installa-sopra.log"
     } else {
         Set-Content "$datiVecchi\aggiorna.request" 'aggiorna'
-        $fine = (Get-Date).AddMinutes(15)
+        $fine = (Get-Date).AddMinutes(9)  # di solito l'aggiornamento finisce in 2-3 minuti; piu' di 9 vuol dire che non e' partito
         $versioneNuova = (Get-Content "$Codice\VERSION" -TotalCount 1).Trim()
         function Versione-Installata { try { (Get-Content "$nuova\runtime\app\VERSION" -TotalCount 1 -ErrorAction Stop).Trim() } catch { '' } }
         $ultimaRichiesta = Get-Date; $ultimoRiavvio = Get-Date; $riavvii = 0
         while ((Get-Date) -lt $fine -and (Versione-Installata) -ne $versioneNuova) {
             Start-Sleep 10
-            # Se dopo 5 minuti non si e' mosso niente (nessun file scaricato), come farebbe la persona si chiude e si riapre la
+            # Se dopo 3 minuti non si e' mosso niente (nessun file scaricato), come farebbe la persona si chiude e si riapre la
             # versione di prima: al riavvio ricontrolla gli aggiornamenti. Al massimo due volte.
-            if ($riavvii -lt 2 -and (Get-Date) -gt $ultimoRiavvio.AddMinutes(5) -and -not (Test-Path "$datiVecchi\aggiornamenti")) {
-                Write-Host "       NOTA: nessun aggiornamento dopo 5 minuti: riavvio la versione di prima (come farebbe la persona)"
+            if ($riavvii -lt 2 -and (Get-Date) -gt $ultimoRiavvio.AddMinutes(3) -and -not (Test-Path "$datiVecchi\aggiornamenti")) {
+                Write-Host "       NOTA: nessun aggiornamento dopo 3 minuti: riavvio la versione di prima (come farebbe la persona)"
                 (Processi-Di $vecchia) | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
                 Start-Sleep 8
                 Accendi $vecchia
