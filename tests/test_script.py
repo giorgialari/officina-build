@@ -460,3 +460,10 @@ def test_windows_riavvia_la_versione_di_prima_se_l_aggiornamento_dall_app_non_pa
     assert "$riavvii -lt 2" in s and "$ultimoRiavvio.AddMinutes(3)" in s and "riavvio la versione di prima" in s
     assert "$fine = (Get-Date).AddMinutes(9)" in s  # il tempo massimo e' stretto: 15 minuti erano attesa sprecata
     assert "(Processi-Di $nuova).Count -eq 0 -and (Test-Path $nuova)" in s  # niente accensione di una cartella che non c'e'
+
+
+def test_windows_stampa_cosa_dicono_i_registri_della_versione_di_prima_sugli_aggiornamenti():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "NOTA log:" in s and "nessuna riga sugli aggiornamenti" in s
+    assert s.index("NOTA log:") < s.index("NOTA: aggiornamento dall'app fermo.")

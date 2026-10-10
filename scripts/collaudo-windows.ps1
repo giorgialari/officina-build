@@ -330,6 +330,13 @@ function Scenario-Aggiornamento([string]$modo) {
             $installer = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*AI-Brain-*windows-x64*' -or $_.Path -like '*\is-*.tmp\*' } | ForEach-Object { $_.Name }) -join ', '
             $accesi = (Processi-Di $vecchia).Count
             $dati = ((Get-ChildItem $datiVecchi -Force -ErrorAction SilentlyContinue | Select-Object -First 15).Name) -join ', '
+            # Cosa dice la versione di prima nei suoi registri sugli aggiornamenti (solo le righe che ne parlano, le ultime).
+            try {
+                $righeLog = Get-ChildItem "$datiVecchi\logs" -File -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 400 -ErrorAction SilentlyContinue } |
+                    Where-Object { $_ -match 'aggiorn|update|feed|firma|signature|versione|version' } | Select-Object -Last 12
+                foreach ($riga in $righeLog) { Write-Host "       NOTA log: $((([string]$riga) -replace '[^\x20-\x7E]', '?').Trim().Substring(0, [Math]::Min(200, ([string]$riga).Trim().Length)))" }
+                if (-not $righeLog) { Write-Host "       NOTA log: nessuna riga sugli aggiornamenti nei registri della versione di prima" }
+            } catch { }
             Write-Host "       NOTA: aggiornamento dall'app fermo. scaricati: [$scaricati]; installer accesi: [$installer]; programmi della versione di prima accesi: $accesi; file dei dati: [$dati]"
         }
         Controlla ((Versione-Installata) -eq $versioneNuova) 'l''app ha scaricato e installato la versione nuova da sola'
