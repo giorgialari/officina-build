@@ -168,6 +168,9 @@ if ($ConPulita) {
     Controlla (Test-Path "$app\runtime\python\AI Brain.exe") 'l''app e'' in Programs\Memdoria'
     $dati = "$Local\Memdoria"
     Metti-Licenza $app $dati
+    # Il modello di Memdoria AI (1,2 GB) arriva dalla cache della corsa, se c'e'; altrimenti lo scarica l'app e lo si tiene per la prossima.
+    $cacheModello = "$env:RUNNER_TEMP\modello"
+    if (Test-Path "$cacheModello\*.gguf") { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
     Accendi $app
     $p = Aspetta-Lettura $dati
     Richiedi ($null -ne $p -and -not $p.error) "la prima lettura finisce senza errori ($($p.error))"
@@ -201,6 +204,11 @@ if ($ConPulita) {
     Controlla (Collega-Ai $dati) 'collega le AI: la voce di Memdoria compare nei file di Claude Code'
     Controlla (Lingua-Si-Cambia $dati) 'il cambio lingua (inglese e di nuovo italiano) si salva'
     Pagina-Nel-Browser $dati 'installazione pulita'
+    if ((Test-Path "$dati\modello-locale\*.gguf.ok") -and -not (Test-Path "$cacheModello\*.gguf")) {
+        New-Item -ItemType Directory -Force $cacheModello | Out-Null
+        Copy-Item "$dati\modello-locale\*.gguf*" $cacheModello -Force
+        Write-Host "       modello salvato per la prossima volta"
+    }
     Disinstalla-Tutto
     Controlla (-not (Test-Path "$Programmi\Memdoria")) 'dopo la disinstallazione la cartella del programma non c e piu'
     Controlla (@(Get-Process | Where-Object { $_.Path -like "$Programmi\*" }).Count -eq 0) 'dopo la disinstallazione nessun programma e acceso'

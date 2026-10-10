@@ -114,6 +114,8 @@ say "A. Installazione pulita della versione nuova"
 monta_e_copia "$NUOVO" "Memdoria.app"; controlla $? "Memdoria.app copiata in Applicazioni"
 DATI="$SUPPORTO/Memdoria"
 licenza /Applications/Memdoria.app "$DATI"
+CACHE_MODELLO="$RUNNER_TEMP/modello"
+if ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then mkdir -p "$DATI/modello-locale" && cp "$CACHE_MODELLO"/* "$DATI/modello-locale/" && echo "       modello preso dalla cache"; fi
 accendi /Applications/Memdoria.app/Contents/MacOS/Memdoria nuova
 aspetta_lettura "$DATI"; richiedi $? "la prima lettura finisce senza errori"
 C=$(conta "$DATI" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate: ${C:-0} (attese almeno 3)"
@@ -132,6 +134,9 @@ if [ "$modello" = 0 ]; then
   controlla $lavora "Memdoria AI ha cominciato a lavorare sulle conversazioni"
 fi
 pagina_nel_browser "$DATI" "installazione pulita"
+if ls "$DATI"/modello-locale/*.gguf.ok > /dev/null 2>&1 && ! ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then
+  mkdir -p "$CACHE_MODELLO" && cp "$DATI"/modello-locale/*.gguf* "$CACHE_MODELLO"/ && echo "       modello salvato per la prossima volta"
+fi
 # Disinstallazione (come «Disinstalla Memdoria» nella pagina): programmi spenti, dati tolti, voci delle AI tolte
 echo '{"dati": true, "backup": false}' > "$DATI/disinstalla.request"
 for i in $(seq 1 60); do sleep 5; pgrep -f "Contents/Resources/runtime" > /dev/null || break; done
