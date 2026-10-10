@@ -366,10 +366,12 @@ def test_windows_accende_con_le_opzioni_del_collegamento_di_quella_versione():
 def test_le_prove_che_si_saltavano_girano_su_github():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "prove.yml").read_text(encoding="utf-8")
-    assert "AI_BRAIN_TEST_SSHD: '1'" in s and "AI_BRAIN_RUNTIME_PROVA: ${{ env.RT }}" in s
-    assert "AI_BRAIN_TEST_GRANDE: '1'" in s
-    for prova in ("test_online_ssh.py", "test_grafo_accenti.py", "test_riservatezza.py"):
+    assert "AI_BRAIN_TEST_SSHD: '1'" in s and "AI_BRAIN_TEST_GRANDE: '1'" in s
+    for prova in ("test_online_ssh.py", "test_riservatezza.py"):
         assert prova in s
+    # le due che non girano su Linux, con il loro motivo scritto nel workflow
+    assert "--deselect backend/tests/test_online_ssh.py::test_a_bridge_left_alive_by_a_crash_is_closed_before_reconnecting" in s
+    assert "AI_BRAIN_RUNTIME_PROVA" in s and "runtime VERO" in s
     assert "openssh-server" in s
 
 
@@ -387,11 +389,11 @@ def test_windows_aspetta_l_installer_e_racconta_dove_si_ferma_l_aggiornamento_da
     assert "inizioInstaller" in s and "attesa $([int]" in s
 
 
-def test_il_lavoro_extra_ha_la_lingua_utf8_per_le_cartelle_con_gli_accenti():
+def test_il_lavoro_extra_non_porta_piu_con_se_neo4j_e_java_che_non_servono():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "prove.yml").read_text(encoding="utf-8")
     extra = s[s.index("  extra:"):s.index("  controlli-pagina:")]
-    assert "LANG: C.UTF-8" in extra and "LC_ALL: C.UTF-8" in extra
+    assert "neo4j.tar.gz" not in extra and "setup-java" not in extra
 
 
 def test_mac_aspetta_che_i_dati_spariscano_e_windows_nomina_solo_i_programmi_della_cartella_vecchia():
