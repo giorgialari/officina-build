@@ -123,6 +123,10 @@ jobs:
     timeout-minutes: 60
     env:
       RT: ${{ github.workspace }}/../rt
+      # Come sul Mac e su Windows: cartelle con le lettere accentate (la prova «Società») le vede anche Java. Con la lingua «C» di
+      # un runner Linux nudo no, e il grafo non parte.
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/codice

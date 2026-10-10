@@ -304,6 +304,14 @@ function Scenario-Aggiornamento([string]$modo) {
         $versioneNuova = (Get-Content "$Codice\VERSION" -TotalCount 1).Trim()
         function Versione-Installata { try { (Get-Content "$nuova\runtime\app\VERSION" -TotalCount 1 -ErrorAction Stop).Trim() } catch { '' } }
         while ((Get-Date) -lt $fine -and (Versione-Installata) -ne $versioneNuova) { Start-Sleep 10 }
+        if ((Versione-Installata) -ne $versioneNuova) {
+            # Per capire dove si ferma: cosa ha scaricato, quali installer sono accesi, quali file ha la cartella dei dati.
+            $scaricati = (Get-ChildItem "$datiVecchi\aggiornamenti" -Force -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) $([math]::Round($_.Length / 1MB)) MB" }) -join ' ; '
+            $installer = (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*AI-Brain-*windows-x64*' -or $_.Path -like '*\is-*.tmp\*' } | ForEach-Object { $_.Name }) -join ', '
+            $accesi = (Processi-Di $vecchia).Count
+            $dati = ((Get-ChildItem $datiVecchi -Force -ErrorAction SilentlyContinue | Select-Object -First 15).Name) -join ', '
+            Write-Host "       NOTA: aggiornamento dall'app fermo. scaricati: [$scaricati]; installer accesi: [$installer]; programmi della versione di prima accesi: $accesi; file dei dati: [$dati]"
+        }
         Controlla ((Versione-Installata) -eq $versioneNuova) 'l''app ha scaricato e installato la versione nuova da sola'
         Start-Sleep 30
         Remove-Item Env:\AI_BRAIN_UPDATES_URL -ErrorAction SilentlyContinue
@@ -311,7 +319,11 @@ function Scenario-Aggiornamento([string]$modo) {
     Start-Sleep 10
     if ($separata) {
         Controlla ((Processi-Di $vecchia).Count -eq 0) 'nessun programma della versione di prima e'' rimasto acceso'
-        $fineTolta = (Get-Date).AddSeconds(90)
+        # L'installer toglie la cartella di prima DOPO aver copiato la nuova (1,8 GB di file): si aspetta che abbia finito, e si dice quanto.
+        $inizioInstaller = Get-Date
+        while ((Get-Date) -lt $inizioInstaller.AddMinutes(6) -and @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*AI-Brain-*windows-x64*' -or $_.Path -like '*\is-*.tmp\*' }).Count -gt 0) { Start-Sleep 5 }
+        Write-Host "       NOTA: l'installer e' ancora acceso? $(@(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*AI-Brain-*windows-x64*' -or $_.Path -like '*\is-*.tmp\*' }).Count -gt 0); attesa $([int]((Get-Date) - $inizioInstaller).TotalSeconds) s"
+        $fineTolta = (Get-Date).AddSeconds(60)
         while ((Test-Path $vecchia) -and (Get-Date) -lt $fineTolta) { Start-Sleep 5 }
         $rimasto = if (Test-Path $vecchia) { ((Get-ChildItem $vecchia -Recurse -Force -ErrorAction SilentlyContinue | Select-Object -First 8 | ForEach-Object { $_.FullName.Substring($vecchia.Length) }) -join ' ; ') } else { '' }
         # Il programma della versione di prima non deve esserci piu': i dati della persona stanno altrove (AppData\Local\Memdoria).

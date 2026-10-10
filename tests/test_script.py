@@ -378,3 +378,17 @@ def test_windows_dice_perche_resta_la_cartella_vecchia_vuota():
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "NOTA: la cartella si e'' lasciata togliere" in s and "NOTA: la cartella e' occupata" in s
     assert "Controlla (-not $esiste)" in s  # una cartella rimasta, anche vuota, e' un difetto
+
+
+def test_windows_aspetta_l_installer_e_racconta_dove_si_ferma_l_aggiornamento_dall_app():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "NOTA: aggiornamento dall'app fermo" in s and "scaricati: [" in s
+    assert "inizioInstaller" in s and "attesa $([int]" in s
+
+
+def test_il_lavoro_extra_ha_la_lingua_utf8_per_le_cartelle_con_gli_accenti():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "prove.yml").read_text(encoding="utf-8")
+    extra = s[s.index("  extra:"):s.index("  controlli-pagina:")]
+    assert "LANG: C.UTF-8" in extra and "LC_ALL: C.UTF-8" in extra
