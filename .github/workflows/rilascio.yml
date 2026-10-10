@@ -33,6 +33,7 @@ jobs:
       collaudi: ${{ steps.v.outputs.collaudi }}
       primo: ${{ steps.v.outputs.primo }}
       primo_nome: ${{ steps.v.outputs.primo_nome }}
+      collaudi_win: ${{ steps.v.outputs.collaudi_win }}
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/codice
@@ -85,6 +86,10 @@ jobs:
       run:
         shell: bash
     steps:
+    - name: 'Antivirus in tempo reale spento (macchina usa e getta: piu'' veloce)'
+      shell: powershell
+      run: |
+        try { Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Stop; 'antivirus spento' } catch { 'non si puo spegnere: va avanti' }
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
@@ -173,13 +178,17 @@ jobs:
         retention-days: 1
         compression-level: 0
   win-collauda:
-    name: Windows · aggiorna da ${{ matrix.vecchia }}
+    name: Windows · aggiorna da ${{ matrix.vecchia }} (${{ matrix.modo }})
     needs:
     - win-costruisci
     - versioni
     runs-on: windows-latest
     timeout-minutes: 240
     steps:
+    - name: 'Antivirus in tempo reale spento (macchina usa e getta: piu'' veloce)'
+      shell: powershell
+      run: |
+        try { Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Stop; 'antivirus spento' } catch { 'non si puo spegnere: va avanti' }
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
       with:
@@ -219,9 +228,9 @@ jobs:
         $nuovo = (Get-ChildItem pezzi\installer-nuovo\*.exe).FullName
         $pulita = '${{ matrix.pulita }}' -eq 'true'
         if ($pulita) {
-          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 -Vecchio $vecchio -Nuovo $nuovo -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem" -ConPulita
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 -Vecchio $vecchio -Nuovo $nuovo -Modo '${{ matrix.modo }}' -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem" -ConPulita
         } else {
-          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 -Vecchio $vecchio -Nuovo $nuovo -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem"
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 -Vecchio $vecchio -Nuovo $nuovo -Modo '${{ matrix.modo }}' -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem"
         }
         exit $LASTEXITCODE
     - name: Dettaglio cifrato (solo se rosso)
@@ -232,14 +241,14 @@ jobs:
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: registri-cifrati-windows-${{ matrix.vecchia }}
+        name: registri-cifrati-windows-${{ matrix.vecchia }}-${{ matrix.modo }}
         path: ${{ runner.temp }}/riservato/*.cms
         retention-days: 3
-    if: ${{ !cancelled() && needs.versioni.outputs.collaudi != '[]' }}
+    if: ${{ !cancelled() && needs.versioni.outputs.collaudi_win != '[]' }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.versioni.outputs.collaudi) }}
+        include: ${{ fromJSON(needs.versioni.outputs.collaudi_win) }}
   mac-chiavi:
     name: Mac · chiave di prova
     runs-on: ubuntu-24.04

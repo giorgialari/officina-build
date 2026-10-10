@@ -4,7 +4,7 @@
 #      poi controlla trasloco dei dati, nessuna vecchia accesa, memorie intatte e conversazioni trovate.
 # Uso: collaudo-windows.ps1 -Vecchio <exe> -Nuovo <exe> -Codice <cartella del codice> -Chiave <chiave privata di prova>
 param([Parameter(Mandatory)][string]$Vecchio, [Parameter(Mandatory)][string]$Nuovo,
-      [Parameter(Mandatory)][string]$Codice, [Parameter(Mandatory)][string]$Chiave, [switch]$ConPulita)
+      [Parameter(Mandatory)][string]$Codice, [Parameter(Mandatory)][string]$Chiave, [switch]$ConPulita, [ValidateSet('installer','app')][string]$Modo = 'installer')
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 $Local = $env:LOCALAPPDATA
@@ -147,7 +147,7 @@ function Spegni-Tutto {
 
 function Disinstalla-Tutto {
     Spegni-Tutto
-    foreach ($u in (Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | ForEach-Object { Get-ItemProperty $_.PSPath } |
+    foreach ($u in (Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } |
             Where-Object { $_.DisplayName -match 'Memdoria|AI Brain' })) {
         Start-Process ($u.UninstallString -replace '"', '') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
     }
@@ -296,8 +296,7 @@ function Scenario-Aggiornamento([string]$modo) {
     Disinstalla-Tutto
 }
 
-Scenario-Aggiornamento 'installer'
-Scenario-Aggiornamento 'app'
+Scenario-Aggiornamento $Modo
 
 Say 'Esito'
 Spegni-Tutto

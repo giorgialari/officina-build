@@ -13,6 +13,7 @@ corrente = git("show", f"{nuovo}:VERSION").strip()
 sha_nuovo = git("rev-parse", nuovo) or git("rev-parse", "origin/" + nuovo) or nuovo
 costruzioni = [{"nome": "nuovo", "riferimento": sha_nuovo}]
 collaudi = []
+collaudi_win = []
 visti = set()
 for v in [x.strip() for x in elenco.split(",") if x.strip()]:
     if v in visti or v == corrente:
@@ -23,11 +24,13 @@ for v in [x.strip() for x in elenco.split(",") if x.strip()]:
         print(f"::warning::Non trovo il commit della versione {v}: la salto", file=sys.stderr)
         continue
     costruzioni.append({"nome": v, "riferimento": commit})
-    collaudi.append({"vecchia": v, "pulita": not collaudi})  # l'installazione pulita si prova una volta sola
+    prima = not collaudi
+    collaudi.append({"vecchia": v, "pulita": prima})  # l'installazione pulita si prova una volta sola
+    collaudi_win += [{"vecchia": v, "pulita": prima, "modo": "installer"}, {"vecchia": v, "pulita": False, "modo": "app"}]  # i due modi in parallelo
 if not collaudi:
     print("Nessuna versione di prima da collaudare", file=sys.stderr)
 out = os.environ.get("GITHUB_OUTPUT")
-righe = {"matrice": json.dumps(costruzioni), "collaudi": json.dumps(collaudi), "corrente": corrente,
+righe = {"matrice": json.dumps(costruzioni), "collaudi": json.dumps(collaudi), "collaudi_win": json.dumps(collaudi_win), "corrente": corrente,
          "primo": costruzioni[1]["riferimento"] if len(costruzioni) > 1 else "", "primo_nome": costruzioni[1]["nome"] if len(costruzioni) > 1 else ""}
 for k, v in righe.items():
     print(f"{k}={v}")
