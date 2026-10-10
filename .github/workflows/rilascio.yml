@@ -1,109 +1,472 @@
-# Il rilascio di Memdoria costruito e firmato interamente su macchine di GitHub (il Mac e l'MSI di casa possono essere spenti).
-# Prima le prove e i collaudi (completo.yml); se sono verdi costruisce Windows, Mac e le immagini del server con la chiave
-# vera (segreto CHIAVE_FIRMA) e le lascia come allegati CIFRATI. NON tocca nessun server: per metterle online si lancia a mano
-# sul Mac scripts/scarica-e-pubblica.sh. Il registro mostra solo esiti e numeri.
-name: Rilascio
-run-name: Rilascio · ${{ inputs.riferimento }}
-
-on:
+# Collaudo e rilascio di Memdoria, tutto su macchine di GitHub (il Mac e l'MSI di casa possono restare spenti).
+#   1. Prove del codice (workflow «Prove»), collaudo di Windows, collaudo di Mac, collaudo del server: in parallelo, su macchine
+#      pulite, con una CHIAVE DI PROVA (generata a ogni corsa) al posto di quella vera.
+#   2. Se «solo_collaudo» e' spenta e tutto e' verde: costruisce Windows, Mac e le immagini del server con la chiave VERA
+#      (segreto CHIAVE_FIRMA) e le lascia come allegati CIFRATI (aprirli e pubblicarli: scripts/scarica-e-pubblica.sh, sul Mac).
+# Non tocca nessun server. Il registro mostra solo esiti e numeri; i dettagli degli errori sono in allegati cifrati.
+name: Collaudo e rilascio
+run-name: ${{ inputs.solo_collaudo && 'Collaudo' || 'Collaudo e rilascio' }} · ${{ inputs.riferimento }}
+'on':
   workflow_dispatch:
     inputs:
       riferimento:
-        description: "Ramo o commit da rilasciare"
+        description: Ramo o commit del codice (la versione nuova)
         default: main
-
+      vecchio:
+        description: Commit della versione di prima per il collaudo di aggiornamento (di base la 1.0.30)
+        default: 2490f8a
+      solo_collaudo:
+        description: 'Solo prove e collaudi: non costruisce il rilascio'
+        type: boolean
+        default: true
 permissions:
   contents: read
-
 concurrency:
   group: rilascio
   cancel-in-progress: false
-
 jobs:
-  collaudi:
-    uses: ./.github/workflows/completo.yml
+  prove:
+    uses: ./.github/workflows/prove.yml
     with:
       riferimento: ${{ inputs.riferimento }}
     secrets: inherit
-
+  win-chiavi:
+    name: Chiave di prova
+    runs-on: ubuntu-24.04
+    outputs:
+      pubblica: ${{ steps.k.outputs.pubblica }}
+    steps:
+    - id: k
+      run: |
+        pip install --quiet cryptography
+        python - <<'PY'
+        import base64, os
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        k = Ed25519PrivateKey.generate()
+        pem = k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+        open("chiave-privata.pem", "wb").write(pem)
+        pub = k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        open(os.environ["GITHUB_OUTPUT"], "a").write("pubblica=" + base64.urlsafe_b64encode(pub).decode().rstrip("=") + "\n")
+        PY
+    - uses: actions/upload-artifact@v4
+      with:
+        name: chiave-prova
+        path: chiave-privata.pem
+        retention-days: 1
+  win-costruisci:
+    name: Costruisce ${{ matrix.nome }}
+    needs:
+    - win-chiavi
+    runs-on: windows-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+        - nome: vecchio
+          riferimento: ${{ inputs.vecchio }}
+        - nome: nuovo
+          riferimento: ${{ inputs.riferimento }}
+    env:
+      AI_BRAIN_VENDOR: ${{ github.workspace }}\..\vendor
+      AI_BRAIN_BUILD: ${{ github.workspace }}\..\build
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: chiave-prova
+        path: chiave
+    - name: Codice (copia di sola lettura, chiave dedicata)
+      env:
+        CODICE_CHIAVE: ${{ secrets.CODICE_CHIAVE }}
+        RIFERIMENTO: ${{ matrix.riferimento }}
+      run: |
+        mkdir -p ~/.ssh
+        printf '%s\n' "$CODICE_CHIAVE" > ~/.ssh/codice
+        chmod 600 ~/.ssh/codice
+        ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+        export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/codice -o IdentitiesOnly=yes"
+        git clone --quiet git@github.com:giorgialari/ai-brain.git codice
+        git -C codice checkout --quiet "$RIFERIMENTO"
+        rm -f ~/.ssh/codice
+        echo "Codice: $(git -C codice rev-parse --short HEAD), versione $(cat codice/VERSION)"
+    - name: Chiave pubblica di prova al posto di quella vera
+      env:
+        PUBBLICA: ${{ needs.win-chiavi.outputs.pubblica }}
+      run: |
+        sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" codice/backend/app/integrita.py codice/backend/app/licenza.py
+        grep -c "$PUBBLICA" codice/backend/app/integrita.py codice/backend/app/licenza.py
+    - name: Modelli della ricerca (gli stessi dell'immagine del server, scaricati qui)
+      shell: powershell
+      working-directory: codice
+      run: |
+        $ErrorActionPreference = 'Continue'
+        python -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
+        $m = "$env:AI_BRAIN_VENDOR\common\models"
+        New-Item -ItemType Directory -Force $m | Out-Null
+        $env:FASTEMBED_CACHE_PATH = $m
+        $env:HF_HOME = "$m\huggingface"
+        $env:HF_HUB_DISABLE_XET = '1'
+        $env:PYTHONPATH = (Get-Location).Path
+        python scripts\download_models.py
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: App e impronte
+      shell: powershell
+      working-directory: codice
+      run: |
+        $ErrorActionPreference = 'Continue'
+        powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 all
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - name: Firma con la chiave di prova e installer
+      shell: powershell
+      working-directory: codice
+      run: |
+        $ErrorActionPreference = 'Continue'
+        $versione = (Get-Content VERSION -TotalCount 1).Trim()
+        $elenco = "$env:AI_BRAIN_BUILD\AI Brain\runtime\app\impronte.json"
+        python -m pip install --quiet cryptography
+        python backend\app\integrita.py firma $elenco --chiave "$env:GITHUB_WORKSPACE\chiave\chiave-privata.pem" --versione $versione --sistema windows
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 installer
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    - uses: actions/upload-artifact@v4
+      with:
+        name: installer-${{ matrix.nome }}
+        path: codice/deploy/dist/AI-Brain-*-windows-x64.exe
+        retention-days: 1
+        compression-level: 0
+  win-collauda:
+    name: Installa, aggiorna e controlla
+    needs:
+    - win-costruisci
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        path: pezzi
+        pattern: '{installer-*,chiave-prova}'
+    - name: Codice per fare le licenze di prova (solo licenza.py)
+      shell: bash
+      env:
+        CODICE_CHIAVE: ${{ secrets.CODICE_CHIAVE }}
+        RIFERIMENTO: ${{ inputs.riferimento }}
+      run: |
+        mkdir -p ~/.ssh
+        printf '%s\n' "$CODICE_CHIAVE" > ~/.ssh/codice
+        chmod 600 ~/.ssh/codice
+        ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+        GIT_SSH_COMMAND="ssh -i $HOME/.ssh/codice -o IdentitiesOnly=yes" git clone --quiet git@github.com:giorgialari/ai-brain.git codice
+        git -C codice checkout --quiet "$RIFERIMENTO"
+        rm -f ~/.ssh/codice
+        python -m pip install --quiet cryptography
+    - name: Browser per guardare la pagina vera
+      shell: powershell
+      working-directory: scripts
+      run: |
+        npm init -y | Out-Null
+        npm install --silent playwright@1.49.1
+        npx playwright install chromium
+    - name: Collaudo
+      shell: powershell
+      run: |
+        $vecchio = (Get-ChildItem pezzi\installer-vecchio\*.exe).FullName
+        $nuovo = (Get-ChildItem pezzi\installer-nuovo\*.exe).FullName
+        powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 `
+          -Vecchio $vecchio -Nuovo $nuovo -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem"
+        exit $LASTEXITCODE
+    - name: Dettaglio cifrato (solo se rosso)
+      if: failure()
+      shell: bash
+      run: scripts/cifra.sh
+    - name: Allegato cifrato
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: registri-cifrati-windows
+        path: ${{ runner.temp }}/riservato/*.cms
+        retention-days: 3
+  mac-chiavi:
+    name: Chiave di prova
+    runs-on: ubuntu-24.04
+    outputs:
+      pubblica: ${{ steps.k.outputs.pubblica }}
+    steps:
+    - id: k
+      run: |
+        pip install --quiet cryptography
+        python - <<'PY'
+        import base64, os
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        k = Ed25519PrivateKey.generate()
+        open("chiave-privata.pem", "wb").write(k.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        pub = k.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        open(os.environ["GITHUB_OUTPUT"], "a").write("pubblica=" + base64.urlsafe_b64encode(pub).decode().rstrip("=") + "\n")
+        PY
+    - uses: actions/upload-artifact@v4
+      with:
+        name: chiave-prova-mac
+        path: chiave-privata.pem
+        retention-days: 1
+  mac-costruisci:
+    name: Costruisce ${{ matrix.nome }}
+    needs:
+    - mac-chiavi
+    runs-on: macos-14
+    timeout-minutes: 120
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+        - nome: vecchio
+          riferimento: ${{ inputs.vecchio }}
+        - nome: nuovo
+          riferimento: ${{ inputs.riferimento }}
+    env:
+      AI_BRAIN_VENDOR: ${{ github.workspace }}/../vendor
+      AI_BRAIN_BUILD: ${{ github.workspace }}/../build
+      AI_BRAIN_DIST: ${{ github.workspace }}/../dist
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        name: chiave-prova-mac
+        path: chiave
+    - uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ matrix.riferimento }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+    - name: Chiave pubblica di prova al posto di quella vera
+      env:
+        PUBBLICA: ${{ needs.mac-chiavi.outputs.pubblica }}
+      run: |
+        sed -i '' "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" codice/backend/app/integrita.py codice/backend/app/licenza.py
+        grep -c "$PUBBLICA" codice/backend/app/integrita.py codice/backend/app/licenza.py
+    - name: Node (quello dell'app) e pagine
+      run: |
+        NODE=$(grep '^NODE_VERSION=' codice/deploy/comune/versions.env | cut -d= -f2 | tr -d v)
+        echo "NODE=$NODE" >> "$GITHUB_ENV"
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE }}
+    - name: Pagine
+      run: scripts/riservato.sh pagine codice 'built|Successfully|error' -- bash deploy/comune/pagine.sh "$RUNNER_TEMP/pagine"
+    - name: Modelli della ricerca
+      run: |
+        python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
+        M="$AI_BRAIN_VENDOR/common/models"; mkdir -p "$M"
+        cd codice && FASTEMBED_CACHE_PATH="$M" HF_HOME="$M/huggingface" HF_HUB_DISABLE_XET=1 PYTHONPATH="$PWD" python3 scripts/download_models.py > /dev/null 2>&1
+    - name: Il dmg (firmato con la chiave di prova)
+      env:
+        AI_BRAIN_CHIAVE_LICENZE: ${{ github.workspace }}/chiave/chiave-privata.pem
+        AI_BRAIN_PAGINE: ${{ runner.temp }}/pagine
+      run: |
+        pip3 install --quiet --break-system-packages cryptography 2>/dev/null || pip3 install --quiet cryptography
+        scripts/riservato.sh dmg codice 'dmg|Pronto' -- bash deploy/mac/build-mac.sh release
+    - name: Il dmg in una cartella della corsa
+      run: mkdir -p uscita && cp "$AI_BRAIN_DIST"/AI-Brain-*-mac-arm64.dmg uscita/
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dmg-${{ matrix.nome }}
+        path: uscita/*.dmg
+        retention-days: 1
+        compression-level: 0
+    - name: Dettaglio cifrato (solo se rosso)
+      if: failure()
+      run: scripts/cifra.sh
+    - name: Allegato cifrato
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: registri-cifrati-mac-${{ matrix.nome }}
+        path: ${{ runner.temp }}/riservato/*.cms
+        retention-days: 3
+  mac-collauda:
+    name: Installa, aggiorna dall'app e controlla
+    needs:
+    - mac-costruisci
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
+      with:
+        path: pezzi
+        pattern: '{dmg-*,chiave-prova-mac}'
+    - uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ inputs.riferimento }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+    - name: Collaudo
+      run: |
+        VECCHIO=$(ls pezzi/dmg-vecchio/*.dmg); NUOVO=$(ls pezzi/dmg-nuovo/*.dmg)
+        bash scripts/collaudo-mac.sh "$PWD/$VECCHIO" "$PWD/$NUOVO" "$PWD/codice" "$PWD/pezzi/chiave-prova-mac/chiave-privata.pem"
+    - name: Dettaglio cifrato (solo se rosso)
+      if: failure()
+      run: scripts/cifra.sh
+    - name: Allegato cifrato
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: registri-cifrati-mac
+        path: ${{ runner.temp }}/riservato/*.cms
+        retention-days: 3
+  srv-server:
+    name: Il server su una macchina pulita
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ inputs.riferimento }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+    - name: Immagine del server (costruita dal codice)
+      run: |
+        V=$(cat codice/VERSION)
+        echo "V=$V" >> "$GITHUB_ENV"
+        scripts/riservato.sh immagine codice 'Successfully|DONE|naming to' -- \
+          docker build -f deploy/server/Dockerfile --build-arg AI_BRAIN_VERSION="$V" -t "ai-brain-server:$V" .
+    - name: Il server si accende (grafo, ricerca e brain, come sul server vero)
+      run: |
+        cat > codice/deploy/server/.env <<EOF
+        AI_BRAIN_VERSION=$V
+        AI_BRAIN_PUBLIC_URL=http://localhost:8765
+        BRAIN_ALLOWED_HOSTS=localhost,127.0.0.1
+        NEO4J_PASSWORD=$(openssl rand -hex 16)
+        BRAIN_TOKEN=$(openssl rand -hex 24)
+        MEILI_KEY=$(openssl rand -hex 24)
+        EOF
+        scripts/riservato.sh accensione codice/deploy/server 'Started|Healthy|running' -- \
+          docker compose -f docker-compose.yml up -d grafo ricerca brain
+    - name: Aspetta che risponda
+      run: |
+        for i in $(seq 1 60); do
+          curl -fsS http://127.0.0.1:8765/health > /dev/null 2>&1 && { echo "Il server risponde dopo $((i*5)) secondi"; exit 0; }
+          sleep 5
+        done
+        echo "Il server non risponde dopo 5 minuti"; exit 1
+    - name: Lo provo come una persona (salvare, cercare, copia di sicurezza)
+      run: |
+        set -e
+        T=$(grep '^BRAIN_TOKEN=' codice/deploy/server/.env | cut -d= -f2)
+        H="Authorization: Bearer $T"
+        curl -fsS -H "$H" http://127.0.0.1:8765/admin/stats > /dev/null && echo "OK   le statistiche rispondono"
+        R=$(curl -fsS -X POST -H "$H" -H 'Content-Type: application/json' http://127.0.0.1:8765/admin/remember \
+          -d '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}')
+        echo "$R" | grep -q '"created"' && echo "OK   una memoria si salva"
+        sleep 5
+        curl -fsS -X POST -H "$H" -H 'Content-Type: application/json' http://127.0.0.1:8765/admin/search -d '{"query":"gestionale Alfa","limit":5}' \
+          | grep -q 'Alfa' && echo "OK   la memoria si ritrova con la ricerca"
+        S=$(curl -fsS -H "$H" http://127.0.0.1:8765/admin/stats)
+        echo "$S" | grep -q '"memories":1' && echo "OK   il conto delle memorie e' giusto"
+    - name: Il server si riavvia e le memorie ci sono ancora
+      run: |
+        set -e
+        cd codice/deploy/server && docker compose -f docker-compose.yml restart brain > /dev/null
+        for i in $(seq 1 40); do curl -fsS http://127.0.0.1:8765/health > /dev/null 2>&1 && break; sleep 5; done
+        T=$(grep '^BRAIN_TOKEN=' .env | cut -d= -f2)
+        curl -fsS -H "Authorization: Bearer $T" http://127.0.0.1:8765/admin/stats | grep -q '"memories":1' && echo "OK   dopo il riavvio le memorie ci sono"
+    - name: Dettaglio cifrato (solo se rosso)
+      if: failure()
+      run: |
+        mkdir -p "$RUNNER_TEMP/riservato"
+        cd codice/deploy/server && docker compose -f docker-compose.yml logs --no-color --tail 300 > "$RUNNER_TEMP/riservato/server.log" 2>&1 || true
+        openssl cms -encrypt -aes256 -binary -in "$RUNNER_TEMP/riservato/server.log" -out "$RUNNER_TEMP/riservato/server.cms" -outform DER "$GITHUB_WORKSPACE/registri.pem"
+    - name: Allegato cifrato
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: registri-cifrati-server
+        path: ${{ runner.temp }}/riservato/*.cms
+        retention-days: 3
   windows:
     name: Windows (firmato)
-    needs: collaudi
+    needs: &id001
+    - prove
+    - win-collauda
+    - mac-collauda
+    - srv-server
     runs-on: windows-latest
     timeout-minutes: 120
     env:
       AI_BRAIN_VENDOR: ${{ github.workspace }}\..\vendor
       AI_BRAIN_BUILD: ${{ github.workspace }}\..\build
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/codice
-        with:
-          riferimento: ${{ inputs.riferimento }}
-          chiave: ${{ secrets.CODICE_CHIAVE }}
-      - name: Modelli della ricerca
-        shell: powershell
-        working-directory: codice
-        run: |
-          python -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
-          $m = "$env:AI_BRAIN_VENDOR\common\models"
-          New-Item -ItemType Directory -Force $m | Out-Null
-          $env:FASTEMBED_CACHE_PATH = $m; $env:HF_HOME = "$m\huggingface"; $env:HF_HUB_DISABLE_XET = '1'; $env:PYTHONPATH = (Get-Location).Path
-          python scripts\download_models.py *> $null
-          exit $LASTEXITCODE
-      - name: App e impronte
-        shell: powershell
-        working-directory: codice
-        run: |
-          $ErrorActionPreference = 'Continue'
-          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
-          powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 all *> "$env:RUNNER_TEMP\riservato\app.log"
-          $esito = $LASTEXITCODE
-          Write-Host "[windows] app e impronte: uscita $esito"
-          if ($esito -eq 0) { Remove-Item "$env:RUNNER_TEMP\riservato\app.log" -Force }
-          exit $esito
-      - name: Firma con la chiave vera e installer
-        shell: powershell
-        working-directory: codice
-        env:
-          CHIAVE_FIRMA: ${{ secrets.CHIAVE_FIRMA }}
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $chiave = Join-Path $env:RUNNER_TEMP 'firma.pem'
-          [IO.File]::WriteAllText($chiave, $env:CHIAVE_FIRMA)
-          $versione = (Get-Content VERSION -TotalCount 1).Trim()
-          python -m pip install --quiet cryptography
-          python backend\app\integrita.py firma "$env:AI_BRAIN_BUILD\AI Brain\runtime\app\impronte.json" --chiave $chiave --versione $versione --sistema windows
-          $esito = $LASTEXITCODE
-          Remove-Item $chiave -Force
-          if ($esito -ne 0) { exit $esito }
-          powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 installer *> "$env:RUNNER_TEMP\riservato\installer.log"
-          $esito = $LASTEXITCODE
-          Write-Host "[windows] installer: uscita $esito"
-          if ($esito -eq 0) { Remove-Item "$env:RUNNER_TEMP\riservato\installer.log" -Force }
-          exit $esito
-      - name: Allegato cifrato
-        shell: bash
-        run: scripts/proteggi.sh codice/deploy/dist protetto '*-windows-x64.exe'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rilascio-windows
-          path: protetto/
-          retention-days: 3
-          compression-level: 0
-      - name: Dettaglio cifrato (solo se rosso)
-        if: failure()
-        shell: bash
-        run: scripts/cifra.sh
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: registri-cifrati-rilascio-windows
-          path: ${{ runner.temp }}/riservato/*.cms
-          retention-days: 3
-
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ inputs.riferimento }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+    - name: Modelli della ricerca
+      shell: powershell
+      working-directory: codice
+      run: |
+        python -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
+        $m = "$env:AI_BRAIN_VENDOR\common\models"
+        New-Item -ItemType Directory -Force $m | Out-Null
+        $env:FASTEMBED_CACHE_PATH = $m; $env:HF_HOME = "$m\huggingface"; $env:HF_HUB_DISABLE_XET = '1'; $env:PYTHONPATH = (Get-Location).Path
+        python scripts\download_models.py *> $null
+        exit $LASTEXITCODE
+    - name: App e impronte
+      shell: powershell
+      working-directory: codice
+      run: |
+        $ErrorActionPreference = 'Continue'
+        New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
+        powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 all *> "$env:RUNNER_TEMP\riservato\app.log"
+        $esito = $LASTEXITCODE
+        Write-Host "[windows] app e impronte: uscita $esito"
+        if ($esito -eq 0) { Remove-Item "$env:RUNNER_TEMP\riservato\app.log" -Force }
+        exit $esito
+    - name: Firma con la chiave vera e installer
+      shell: powershell
+      working-directory: codice
+      env:
+        CHIAVE_FIRMA: ${{ secrets.CHIAVE_FIRMA }}
+      run: |
+        $ErrorActionPreference = 'Continue'
+        $chiave = Join-Path $env:RUNNER_TEMP 'firma.pem'
+        [IO.File]::WriteAllText($chiave, $env:CHIAVE_FIRMA)
+        $versione = (Get-Content VERSION -TotalCount 1).Trim()
+        python -m pip install --quiet cryptography
+        python backend\app\integrita.py firma "$env:AI_BRAIN_BUILD\AI Brain\runtime\app\impronte.json" --chiave $chiave --versione $versione --sistema windows
+        $esito = $LASTEXITCODE
+        Remove-Item $chiave -Force
+        if ($esito -ne 0) { exit $esito }
+        powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\build-windows.ps1 installer *> "$env:RUNNER_TEMP\riservato\installer.log"
+        $esito = $LASTEXITCODE
+        Write-Host "[windows] installer: uscita $esito"
+        if ($esito -eq 0) { Remove-Item "$env:RUNNER_TEMP\riservato\installer.log" -Force }
+        exit $esito
+    - name: Allegato cifrato
+      shell: bash
+      run: scripts/proteggi.sh codice/deploy/dist protetto '*-windows-x64.exe'
+    - uses: actions/upload-artifact@v4
+      with:
+        name: rilascio-windows
+        path: protetto/
+        retention-days: 3
+        compression-level: 0
+    - name: Dettaglio cifrato (solo se rosso)
+      if: failure()
+      shell: bash
+      run: scripts/cifra.sh
+    - uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: registri-cifrati-rilascio-windows
+        path: ${{ runner.temp }}/riservato/*.cms
+        retention-days: 3
+    if: ${{ !inputs.solo_collaudo }}
   mac:
     name: Mac (firmato)
-    needs: collaudi
+    needs: *id001
     runs-on: macos-14
     timeout-minutes: 120
     env:
@@ -111,123 +474,133 @@ jobs:
       AI_BRAIN_BUILD: ${{ github.workspace }}/../build
       AI_BRAIN_DIST: ${{ github.workspace }}/../dist
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/codice
-        with:
-          riferimento: ${{ inputs.riferimento }}
-          chiave: ${{ secrets.CODICE_CHIAVE }}
-      - name: Node (quello dell'app)
-        run: echo "NODE=$(grep '^NODE_VERSION=' codice/deploy/comune/versions.env | cut -d= -f2 | tr -d v)" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE }}
-      - name: Pagine
-        run: scripts/riservato.sh pagine codice 'built|Successfully|error' -- bash deploy/comune/pagine.sh "$RUNNER_TEMP/pagine"
-      - name: Modelli della ricerca
-        run: |
-          python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
-          M="$AI_BRAIN_VENDOR/common/models"; mkdir -p "$M"
-          cd codice && FASTEMBED_CACHE_PATH="$M" HF_HOME="$M/huggingface" HF_HUB_DISABLE_XET=1 PYTHONPATH="$PWD" python3 scripts/download_models.py > /dev/null 2>&1
-      - name: Il dmg (firmato con la chiave vera)
-        env:
-          CHIAVE_FIRMA: ${{ secrets.CHIAVE_FIRMA }}
-          AI_BRAIN_PAGINE: ${{ runner.temp }}/pagine
-        run: |
-          pip3 install --quiet --break-system-packages cryptography 2>/dev/null || pip3 install --quiet cryptography
-          umask 077; printf '%s\n' "$CHIAVE_FIRMA" > "$RUNNER_TEMP/firma.pem"
-          export AI_BRAIN_CHIAVE_LICENZE="$RUNNER_TEMP/firma.pem"
-          esito=0
-          scripts/riservato.sh dmg codice 'dmg|Pronto' -- bash deploy/mac/build-mac.sh release || esito=$?
-          rm -f "$RUNNER_TEMP/firma.pem"
-          exit $esito
-      - name: Allegato cifrato
-        run: scripts/proteggi.sh "$AI_BRAIN_DIST" protetto '*-mac-arm64.dmg'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rilascio-mac
-          path: protetto/
-          retention-days: 3
-          compression-level: 0
-      - name: Dettaglio cifrato (solo se rosso)
-        if: failure()
-        run: scripts/cifra.sh
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: registri-cifrati-rilascio-mac
-          path: ${{ runner.temp }}/riservato/*.cms
-          retention-days: 3
-
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ inputs.riferimento }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+    - name: Node (quello dell'app)
+      run: echo "NODE=$(grep '^NODE_VERSION=' codice/deploy/comune/versions.env | cut -d= -f2 | tr -d v)" >> "$GITHUB_ENV"
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE }}
+    - name: Pagine
+      run: scripts/riservato.sh pagine codice 'built|Successfully|error' -- bash deploy/comune/pagine.sh "$RUNNER_TEMP/pagine"
+    - name: Modelli della ricerca
+      run: |
+        python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
+        M="$AI_BRAIN_VENDOR/common/models"; mkdir -p "$M"
+        cd codice && FASTEMBED_CACHE_PATH="$M" HF_HOME="$M/huggingface" HF_HUB_DISABLE_XET=1 PYTHONPATH="$PWD" python3 scripts/download_models.py > /dev/null 2>&1
+    - name: Il dmg (firmato con la chiave vera)
+      env:
+        CHIAVE_FIRMA: ${{ secrets.CHIAVE_FIRMA }}
+        AI_BRAIN_PAGINE: ${{ runner.temp }}/pagine
+      run: |
+        pip3 install --quiet --break-system-packages cryptography 2>/dev/null || pip3 install --quiet cryptography
+        umask 077; printf '%s\n' "$CHIAVE_FIRMA" > "$RUNNER_TEMP/firma.pem"
+        export AI_BRAIN_CHIAVE_LICENZE="$RUNNER_TEMP/firma.pem"
+        esito=0
+        scripts/riservato.sh dmg codice 'dmg|Pronto' -- bash deploy/mac/build-mac.sh release || esito=$?
+        rm -f "$RUNNER_TEMP/firma.pem"
+        exit $esito
+    - name: Allegato cifrato
+      run: scripts/proteggi.sh "$AI_BRAIN_DIST" protetto '*-mac-arm64.dmg'
+    - uses: actions/upload-artifact@v4
+      with:
+        name: rilascio-mac
+        path: protetto/
+        retention-days: 3
+        compression-level: 0
+    - name: Dettaglio cifrato (solo se rosso)
+      if: failure()
+      run: scripts/cifra.sh
+    - uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: registri-cifrati-rilascio-mac
+        path: ${{ runner.temp }}/riservato/*.cms
+        retention-days: 3
+    if: ${{ !inputs.solo_collaudo }}
   server:
     name: Immagine server ${{ matrix.arch }} (firmata)
-    needs: collaudi
+    needs: *id001
     strategy:
       matrix:
         include:
-          - arch: amd64
-            runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
+        - arch: amd64
+          runner: ubuntu-24.04
+        - arch: arm64
+          runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:
       ARCH: ${{ matrix.arch }}
       IMMAGINE_MASSIMO_MB: 1000
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/codice
-        with:
-          riferimento: ${{ inputs.riferimento }}
-          chiave: ${{ secrets.CODICE_CHIAVE }}
-      - uses: docker/setup-buildx-action@v3
-      - name: Immagine, firma, compressione e controlli
-        env:
-          CHIAVE_FIRMA: ${{ secrets.CHIAVE_FIRMA }}
-        run: |
-          set -e
-          cd codice
-          V=$(tr -d ' \n' < VERSION)
-          python3 -m pip install --quiet cryptography
-          ../scripts/riservato.sh immagine . 'naming to|DONE' -- \
-            docker buildx build -f deploy/server/Dockerfile --platform "linux/$ARCH" --build-arg STRIP_SOURCES=1 --build-arg AI_BRAIN_VERSION="$V" \
-              -t "ai-brain-server:$V-$ARCH-base" --load .
-          id=$(docker create --platform "linux/$ARCH" "ai-brain-server:$V-$ARCH-base")
-          mkdir -p impronte rilascio
-          docker cp "$id:/app/impronte.json" impronte/impronte.json
-          docker rm "$id" > /dev/null
-          umask 077; printf '%s\n' "$CHIAVE_FIRMA" > "$RUNNER_TEMP/firma.pem"
-          python3 backend/app/integrita.py firma impronte/impronte.json --chiave "$RUNNER_TEMP/firma.pem" --versione "$V" --sistema server
-          rm -f "$RUNNER_TEMP/firma.pem"
-          id=$(docker create --platform "linux/$ARCH" "ai-brain-server:$V-$ARCH-base")
-          docker cp impronte/impronte.json.firma "$id:/app/impronte.json.firma"
-          docker commit "$id" "ai-brain-server:$V" > /dev/null
-          docker rm "$id" > /dev/null
-          STRATI=$(docker image inspect --format '{{json .RootFS.Layers}}' "ai-brain-server:$V")
-          docker save "ai-brain-server:$V" -o "$RUNNER_TEMP/salvata.tar"
-          python3 deploy/server/comprimi_immagine.py "$RUNNER_TEMP/salvata.tar" "rilascio/ai-brain-server-$V-$ARCH.tar"
-          rm -f "$RUNNER_TEMP/salvata.tar"
-          BYTE=$(stat -c %s "rilascio/ai-brain-server-$V-$ARCH.tar")
-          [ "$BYTE" -le $((IMMAGINE_MASSIMO_MB * 1000 * 1000)) ] || { echo "L'immagine $ARCH pesa piu' di $IMMAGINE_MASSIMO_MB MB"; exit 1; }
-          docker image rm "ai-brain-server:$V" "ai-brain-server:$V-$ARCH-base" > /dev/null
-          docker load -i "rilascio/ai-brain-server-$V-$ARCH.tar" > /dev/null
-          [ "$(docker image inspect --format '{{json .RootFS.Layers}}' "ai-brain-server:$V")" = "$STRATI" ] || { echo "Strati diversi dopo la compressione"; exit 1; }
-          docker run --rm --platform "linux/$ARCH" --entrypoint python "ai-brain-server:$V" -B -c "import sys; sys.path.insert(0, '/app'); import integrita; sys.exit(integrita.main(['controlla']))"
-          docker run --rm --platform "linux/$ARCH" --entrypoint python "ai-brain-server:$V" -B -c "import pathlib, sys; sys.exit(0 if pathlib.Path('/app/web-brain/index.html').is_file() else 1)"
-          echo "[server $ARCH] immagine firmata e controllata ($((BYTE / 1000000)) MB)"
-      - name: Allegato cifrato
-        run: scripts/proteggi.sh codice/rilascio protetto '*.tar'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rilascio-server-${{ matrix.arch }}
-          path: protetto/
-          retention-days: 3
-          compression-level: 0
-
+    - uses: actions/checkout@v4
+    - uses: ./.github/actions/codice
+      with:
+        riferimento: ${{ inputs.riferimento }}
+        chiave: ${{ secrets.CODICE_CHIAVE }}
+    - uses: docker/setup-buildx-action@v3
+    - name: Immagine, firma, compressione e controlli
+      env:
+        CHIAVE_FIRMA: ${{ secrets.CHIAVE_FIRMA }}
+      run: |
+        set -e
+        cd codice
+        V=$(tr -d ' \n' < VERSION)
+        python3 -m pip install --quiet cryptography
+        ../scripts/riservato.sh immagine . 'naming to|DONE' -- \
+          docker buildx build -f deploy/server/Dockerfile --platform "linux/$ARCH" --build-arg STRIP_SOURCES=1 --build-arg AI_BRAIN_VERSION="$V" \
+            -t "ai-brain-server:$V-$ARCH-base" --load .
+        id=$(docker create --platform "linux/$ARCH" "ai-brain-server:$V-$ARCH-base")
+        mkdir -p impronte rilascio
+        docker cp "$id:/app/impronte.json" impronte/impronte.json
+        docker rm "$id" > /dev/null
+        umask 077; printf '%s\n' "$CHIAVE_FIRMA" > "$RUNNER_TEMP/firma.pem"
+        python3 backend/app/integrita.py firma impronte/impronte.json --chiave "$RUNNER_TEMP/firma.pem" --versione "$V" --sistema server
+        rm -f "$RUNNER_TEMP/firma.pem"
+        id=$(docker create --platform "linux/$ARCH" "ai-brain-server:$V-$ARCH-base")
+        docker cp impronte/impronte.json.firma "$id:/app/impronte.json.firma"
+        docker commit "$id" "ai-brain-server:$V" > /dev/null
+        docker rm "$id" > /dev/null
+        STRATI=$(docker image inspect --format '{{json .RootFS.Layers}}' "ai-brain-server:$V")
+        docker save "ai-brain-server:$V" -o "$RUNNER_TEMP/salvata.tar"
+        python3 deploy/server/comprimi_immagine.py "$RUNNER_TEMP/salvata.tar" "rilascio/ai-brain-server-$V-$ARCH.tar"
+        rm -f "$RUNNER_TEMP/salvata.tar"
+        BYTE=$(stat -c %s "rilascio/ai-brain-server-$V-$ARCH.tar")
+        [ "$BYTE" -le $((IMMAGINE_MASSIMO_MB * 1000 * 1000)) ] || { echo "L'immagine $ARCH pesa piu' di $IMMAGINE_MASSIMO_MB MB"; exit 1; }
+        docker image rm "ai-brain-server:$V" "ai-brain-server:$V-$ARCH-base" > /dev/null
+        docker load -i "rilascio/ai-brain-server-$V-$ARCH.tar" > /dev/null
+        [ "$(docker image inspect --format '{{json .RootFS.Layers}}' "ai-brain-server:$V")" = "$STRATI" ] || { echo "Strati diversi dopo la compressione"; exit 1; }
+        docker run --rm --platform "linux/$ARCH" --entrypoint python "ai-brain-server:$V" -B -c "import sys; sys.path.insert(0, '/app'); import integrita; sys.exit(integrita.main(['controlla']))"
+        docker run --rm --platform "linux/$ARCH" --entrypoint python "ai-brain-server:$V" -B -c "import pathlib, sys; sys.exit(0 if pathlib.Path('/app/web-brain/index.html').is_file() else 1)"
+        echo "[server $ARCH] immagine firmata e controllata ($((BYTE / 1000000)) MB)"
+    - name: Allegato cifrato
+      run: scripts/proteggi.sh codice/rilascio protetto '*.tar'
+    - uses: actions/upload-artifact@v4
+      with:
+        name: rilascio-server-${{ matrix.arch }}
+        path: protetto/
+        retention-days: 3
+        compression-level: 0
+    if: ${{ !inputs.solo_collaudo }}
   pronto:
     name: Pronto da pubblicare
-    needs: [windows, mac, server]
+    needs:
+    - windows
+    - mac
+    - server
     runs-on: ubuntu-24.04
     steps:
-      - run: |
-          echo "Windows, Mac e server costruiti e firmati."
-          echo "Per metterli online, sul tuo Mac: scripts/scarica-e-pubblica.sh ${{ github.run_id }} <cartella di ai-brain>"
+    - run: |
+        echo "Windows, Mac e server costruiti e firmati."
+        echo "Per metterli online, sul tuo Mac: scripts/scarica-e-pubblica.sh ${{ github.run_id }} <cartella di ai-brain>"
+    if: ${{ !inputs.solo_collaudo }}
+  esito-collaudi:
+    name: Tutti i collaudi verdi
+    needs: *id001
+    runs-on: ubuntu-24.04
+    steps:
+    - run: echo "Prove e collaudi di Windows, Mac e server riusciti."
