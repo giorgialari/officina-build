@@ -95,6 +95,14 @@ function Salva-Memoria([string]$dati, [string]$testo) {
         -Body ([Text.Encoding]::UTF8.GetBytes($corpo)) "http://127.0.0.1:$($cfg.brain_port)/admin/remember" | Out-Null
 }
 
+function Pagina-Nel-Browser([string]$dati, [string]$quando) {
+    # La pagina vera servita dal brain, in un browser vero: si apre, non ha errori e disegna il grafo.
+    if (-not (Test-Path "$PSScriptRoot\pagina.mjs") -or -not (Get-Command node -ErrorAction SilentlyContinue)) { return }
+    $cfg = Get-Content "$dati\config.json" -Raw | ConvertFrom-Json
+    $uscita = & node "$PSScriptRoot\pagina.mjs" "http://127.0.0.1:$($cfg.brain_port)/app/" "$env:RUNNER_TEMP\pagina-$($quando -replace ' ', '-')" 2>&1
+    Controlla ($LASTEXITCODE -eq 0) "la pagina si apre nel browser e disegna il grafo ($quando): $($uscita | Select-Object -Last 1)"
+}
+
 function Processi-Di([string]$cartella) {
     @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like "$cartella\*" })
 }
@@ -133,7 +141,31 @@ if ($p) { $p.events | ForEach-Object { Write-Host "       $($_.text)" } }
 $s = Statistiche $dati
 Controlla ($s.conversations -ge 3) "conversazioni trovate: $($s.conversations) (attese almeno 3: Antigravity, Gemini CLI, Claude Code)"
 Controlla (-not (Test-Path "$Local\AI Brain")) 'nessuna cartella "AI Brain" in una installazione nuova'
+Controlla (($s.entities -ge 1) -and ($s.memories -ge 1)) "il grafo si riempie: $($s.entities) entita, $($s.memories) memorie, $($s.relations) relazioni"
+$menu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
+Controlla (Test-Path "$menu\Memdoria.lnk") 'collegamento "Memdoria" nel menu Start'
+Controlla (Test-Path "$menu\Ripara Memdoria.lnk") 'collegamento "Ripara Memdoria" nel menu Start'
+Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria') 'avvio automatico verso la cartella nuova'
+# Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti, la macchina e'' lenta)
+$fineModello = (Get-Date).AddMinutes(20); $modello = $false
+while ((Get-Date) -lt $fineModello -and -not $modello) {
+    Start-Sleep 20
+    $modello = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf.ok' -ErrorAction SilentlyContinue).Count -gt 0
+}
+Controlla $modello 'Memdoria AI ha scaricato il suo modello'
+if ($modello) {
+    $inizio = (Statistiche $dati).memories; $fineLavoro = (Get-Date).AddMinutes(10); $lavora = $false
+    while ((Get-Date) -lt $fineLavoro -and -not $lavora) {
+        Start-Sleep 20
+        $lavora = ((Statistiche $dati).memories -gt $inizio) -or (Test-Path "$dati\modello-locale\stato.json")
+    }
+    Controlla $lavora 'Memdoria AI ha cominciato a lavorare sulle conversazioni'
+}
+Pagina-Nel-Browser $dati 'installazione pulita'
 Disinstalla-Tutto
+Controlla (-not (Test-Path "$Programmi\Memdoria")) 'dopo la disinstallazione la cartella del programma non c e piu'
+Controlla (@(Get-Process | Where-Object { $_.Path -like "$Programmi\*" }).Count -eq 0) 'dopo la disinstallazione nessun programma e acceso'
+Controlla (-not (Test-Path "$menu\Memdoria.lnk")) 'dopo la disinstallazione il collegamento nel menu Start e sparito'
 
 # ---------------------------------------------------------------------------------------------------------------------
 Say 'B. Aggiornamento: installer nuovo lanciato SOPRA la versione di prima accesa'
@@ -171,12 +203,15 @@ Controlla ($dopo.conversations -ge 3) "conversazioni trovate dopo l'aggiornament
 Controlla ((Processi-Di $vecchia).Count -eq 0) 'ancora nessuna versione di prima accesa'
 Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -notmatch 'Programs\\AI Brain') 'l''avvio automatico non punta piu'' alla cartella vecchia'
 
+Pagina-Nel-Browser $datiNuovi 'dopo l aggiornamento'
+Disinstalla-Tutto
 Say 'Esito'
 Spegni-Tutto
 if ($Fallimenti.Count -gt 0) {
     Write-Host "`nCOLLAUDO FALLITO ($($Fallimenti.Count)):" -ForegroundColor Red
     $Fallimenti | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
-    foreach ($d in $datiVecchi, $datiNuovi, "$Local\Memdoria") { if (Test-Path "$d\logs\launcher.log") { Write-Host "--- $d\logs\launcher.log"; Get-Content "$d\logs\launcher.log" -Tail 40 -Encoding UTF8 } }
+    New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
+    foreach ($d in $datiVecchi, $datiNuovi, "$Local\Memdoria") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
     exit 1
 }
 Write-Host "`nCOLLAUDO RIUSCITO" -ForegroundColor Green

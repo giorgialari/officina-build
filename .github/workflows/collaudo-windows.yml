@@ -12,6 +12,17 @@ on:
       vecchio:
         description: "Commit della versione di prima (di base la 1.0.30)"
         default: 2490f8a
+  workflow_call:
+    inputs:
+      nuovo:
+        type: string
+        default: main
+      vecchio:
+        type: string
+        default: 2490f8a
+    secrets:
+      CODICE_CHIAVE:
+        required: true
 
 permissions:
   contents: read
@@ -150,6 +161,13 @@ jobs:
           git -C codice checkout --quiet "$RIFERIMENTO"
           rm -f ~/.ssh/codice
           python -m pip install --quiet cryptography
+      - name: Browser per guardare la pagina vera
+        shell: powershell
+        working-directory: scripts
+        run: |
+          npm init -y | Out-Null
+          npm install --silent playwright@1.49.1
+          npx playwright install chromium
       - name: Collaudo
         shell: powershell
         run: |
@@ -158,3 +176,14 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collaudo-windows.ps1 `
             -Vecchio $vecchio -Nuovo $nuovo -Codice "$PWD\codice" -Chiave "$PWD\pezzi\chiave-prova\chiave-privata.pem"
           exit $LASTEXITCODE
+      - name: Dettaglio cifrato (solo se rosso)
+        if: failure()
+        shell: bash
+        run: scripts/cifra.sh
+      - name: Allegato cifrato
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registri-cifrati-windows
+          path: ${{ runner.temp }}/riservato/*.cms
+          retention-days: 3

@@ -1,0 +1,43 @@
+# Tutto insieme prima di un rilascio: prove, collaudo Windows, collaudo Mac e collaudo del server, in parallelo, sul codice
+# di Memdoria alla versione indicata. Se tutto e' verde la corsa e' verde. Non pubblica niente (la pubblicazione e' un passo
+# a parte, che arriva quando ci sono i segreti di firma e del sito).
+name: Completo
+run-name: Completo · ${{ inputs.riferimento }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      riferimento:
+        description: "Ramo o commit del codice (la versione nuova)"
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    uses: ./.github/workflows/prove.yml
+    with:
+      riferimento: ${{ inputs.riferimento }}
+    secrets: inherit
+  windows:
+    uses: ./.github/workflows/collaudo-windows.yml
+    with:
+      nuovo: ${{ inputs.riferimento }}
+    secrets: inherit
+  mac:
+    uses: ./.github/workflows/collaudo-mac.yml
+    with:
+      nuovo: ${{ inputs.riferimento }}
+    secrets: inherit
+  server:
+    uses: ./.github/workflows/collaudo-server.yml
+    with:
+      riferimento: ${{ inputs.riferimento }}
+    secrets: inherit
+  esito:
+    name: Tutto verde
+    needs: [prove, windows, mac, server]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Prove e collaudi di Windows, Mac e server riusciti."
