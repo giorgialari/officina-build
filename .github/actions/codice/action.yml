@@ -1,0 +1,30 @@
+name: Codice privato
+description: Scarica il codice (sola lettura, chiave dedicata) alla versione chiesta, senza stampare niente
+inputs:
+  riferimento:
+    description: Ramo, etichetta o commit
+    required: true
+  chiave:
+    description: Chiave di sola lettura
+    required: true
+  cartella:
+    description: Dove mettere il codice
+    default: codice
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CODICE_CHIAVE: ${{ inputs.chiave }}
+        RIFERIMENTO: ${{ inputs.riferimento }}
+        CARTELLA: ${{ inputs.cartella }}
+      run: |
+        mkdir -p ~/.ssh
+        printf '%s\n' "$CODICE_CHIAVE" > ~/.ssh/codice
+        chmod 600 ~/.ssh/codice
+        ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+        export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/codice -o IdentitiesOnly=yes"
+        git clone --quiet git@github.com:giorgialari/ai-brain.git "$CARTELLA" > /dev/null 2>&1
+        git -C "$CARTELLA" checkout --quiet "$RIFERIMENTO" > /dev/null 2>&1
+        rm -f ~/.ssh/codice
+        echo "Codice alla versione $(cat "$CARTELLA/VERSION")"

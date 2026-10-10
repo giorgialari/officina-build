@@ -1,0 +1,145 @@
+# Le prove di Memdoria (backend, pagina nel browser, grafo vero) su macchine pulite di GitHub. Il repository e' pubblico,
+# il codice no: tutto passa da scripts/riservato.sh, quindi nel registro escono solo gli esiti e i numeri; il dettaglio
+# di una prova rossa va in un allegato cifrato che apre solo il proprietario (vedi scripts/riservato.sh).
+name: Prove
+run-name: Prove · ${{ inputs.riferimento }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      riferimento:
+        description: "Ramo o commit del codice da provare"
+        default: main
+  workflow_call:
+    inputs:
+      riferimento:
+        type: string
+        default: main
+    secrets:
+      CODICE_CHIAVE:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Prove dell'app e del server (Python)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/codice
+        with:
+          riferimento: ${{ inputs.riferimento }}
+          chiave: ${{ secrets.CODICE_CHIAVE }}
+      - name: Versione di Python (quella dell'app)
+        id: py
+        run: echo "versione=$(grep '^PYTHON_VERSION=' codice/deploy/comune/versions.env | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.py.outputs.versione }}
+      - name: Dipendenze e schermo finto
+        run: |
+          python -m pip install -q -r codice/backend/requirements-dev.txt -r codice/deploy/comune/requirements-app.txt
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
+      - name: Prove
+        run: scripts/riservato.sh backend codice '[0-9]+ passed' -- xvfb-run -a python -m pytest -q -m "not integration" backend/tests -p no:cacheprovider
+      - name: Dettaglio cifrato (solo se rosse)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registri-cifrati-backend
+          path: ${{ runner.temp }}/riservato/*.cms
+          retention-days: 3
+
+  pagina:
+    name: Prove della pagina (Angular, nel browser)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/codice
+        with:
+          riferimento: ${{ inputs.riferimento }}
+          chiave: ${{ secrets.CODICE_CHIAVE }}
+      - name: Versione di Node (quella dell'app)
+        id: node
+        run: echo "versione=$(grep '^NODE_VERSION=' codice/deploy/comune/versions.env | cut -d= -f2 | tr -d v)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node.outputs.versione }}
+      - name: Dipendenze
+        run: scripts/riservato.sh dipendenze-pagina codice/frontend 'added [0-9]+ packages' -- npm ci --no-audit --no-fund
+      - name: Controlli, prove e costruzione
+        env:
+          NX_DAEMON: "false"
+          NX_NO_CLOUD: "true"
+          NX_TUI: "false"
+        run: scripts/riservato.sh nx codice/frontend 'Successfully ran|Failed tasks' -- npx nx run-many -t lint test build --outputStyle=static
+      - name: Browser per le prove
+        run: scripts/riservato.sh browser codice/frontend 'Chromium' -- npx playwright install --with-deps chromium
+      - name: Comportamento della pagina nel browser
+        env:
+          E2E_SALTA_BUILD: "1"
+        run: scripts/riservato.sh pagina codice/frontend '[0-9]+ passed' -- npm run test:e2e:pagina
+      - name: Dettaglio cifrato (solo se rosse)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registri-cifrati-pagina
+          path: ${{ runner.temp }}/riservato/*.cms
+          retention-days: 3
+
+  grafo:
+    name: Prove con il grafo vero e due brain accesi
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RT: ${{ github.workspace }}/../rt
+      AI_BRAIN_VENDOR: ${{ github.workspace }}/../vendor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/codice
+        with:
+          riferimento: ${{ inputs.riferimento }}
+          chiave: ${{ secrets.CODICE_CHIAVE }}
+      - name: Versioni (da versions.env)
+        id: v
+        run: |
+          for k in PYTHON_VERSION NEO4J_VERSION NEO4J_URL NEO4J_SHA256 MEILI_VERSION; do
+            echo "$k=$(grep "^$k=" codice/deploy/comune/versions.env | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+          done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.v.outputs.PYTHON_VERSION }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Dipendenze
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
+          python -m pip install -q -r codice/backend/requirements-dev.txt -r codice/deploy/comune/requirements-app.txt
+      - name: Neo4j, Meilisearch, Java e modelli (stesse versioni dell'app, Neo4j controllato con l'impronta)
+        run: |
+          mkdir -p "$RT/neo4j" "$AI_BRAIN_VENDOR/common/models"
+          ln -s "$JAVA_HOME" "$RT/jre"
+          curl -sSfL -o neo4j.tar.gz "${{ steps.v.outputs.NEO4J_URL }}"
+          echo "${{ steps.v.outputs.NEO4J_SHA256 }}  neo4j.tar.gz" | sha256sum -c -
+          tar -xzf neo4j.tar.gz --strip-components=1 -C "$RT/neo4j" && rm neo4j.tar.gz
+          curl -sSfL -o "$RT/meilisearch" "https://github.com/meilisearch/meilisearch/releases/download/v${{ steps.v.outputs.MEILI_VERSION }}/meilisearch-linux-amd64"
+          chmod 755 "$RT/meilisearch"
+          cd codice && PYTHONPATH="$PWD" FASTEMBED_CACHE_PATH="$AI_BRAIN_VENDOR/common/models" python scripts/download_models.py > /dev/null 2>&1
+      - name: Prove del grafo e allineamento dal vivo
+        env:
+          AI_BRAIN_PROVE_RUNTIME_CONDIVISO: ${{ env.RT }}
+          AI_BRAIN_LUCCHETTO_NEO4J: ${{ runner.temp }}/neo4j.lock
+        run: scripts/riservato.sh grafo codice '[0-9]+ (passed|failed)|verdi|rosse' -- xvfb-run -a python scripts/scala_prove.py --gradini neo4j --esiti "${{ runner.temp }}/esiti"
+      - name: Dettaglio cifrato (solo se rosse)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registri-cifrati-grafo
+          path: ${{ runner.temp }}/riservato/*.cms
+          retention-days: 3
