@@ -87,7 +87,19 @@ function Metti-Licenza([string]$app, [string]$dati) {
 }
 
 function Accendi([string]$app) {
-    Start-Process "$app\runtime\python\AI Brain.exe" -ArgumentList '-E', '-s', '-S', "`"$app\runtime\app\tray.py`"" -WorkingDirectory $app | Out-Null
+    # Si accende come la persona: con il collegamento nel menu Start che l'installer di QUELLA versione ha creato (la 1.0.25 lo
+    # lancia con il solo tray.py; da 1.0.28 con -E -s -S). Se il collegamento non c'e', si usano le opzioni di oggi.
+    $argomenti = @('-E', '-s', '-S', "`"$app\runtime\app\tray.py`"")
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $menu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
+        foreach ($nome in 'Memdoria', 'AI Brain') {
+            if (-not (Test-Path "$menu\$nome.lnk")) { continue }
+            $collegamento = $shell.CreateShortcut("$menu\$nome.lnk")
+            if ($collegamento.TargetPath -like "$app\*" -and $collegamento.Arguments) { $argomenti = @($collegamento.Arguments); break }
+        }
+    } catch { }
+    Start-Process "$app\runtime\python\AI Brain.exe" -ArgumentList $argomenti -WorkingDirectory $app | Out-Null
 }
 
 . "$PSScriptRoot\lettura.ps1"   # Esito-Lettura: la regola «lettura finita», provata da tests\lettura.tests.ps1
@@ -100,7 +112,7 @@ function Aspetta-Lettura([string]$dati, [int]$minuti = 12) {
         Start-Sleep 10
         Remove-Item "$dati\lingua-da-scegliere" -Recurse -Force -ErrorAction SilentlyContinue
         try {
-            $p = Get-Content "$dati\progress.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+            $p = Get-Content "$dati\progress.json" -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
             $ultimo = @($p.events | Select-Object -Last 1)[0]
             if ($ultimo) { $script:ultimoPasso = ([string]$ultimo.text -replace '[^\x20-\x7E]', '?'); if ($script:ultimoPasso.Length -gt 60) { $script:ultimoPasso = $script:ultimoPasso.Substring(0, 60) } }
             switch (Esito-Lettura $p) {

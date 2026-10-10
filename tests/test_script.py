@@ -351,3 +351,13 @@ def test_riservato_dice_le_fasi_lunghe_e_non_perde_il_codice_di_uscita(tmp_path)
     assert r.returncode == 3, r.stdout + r.stderr
     assert "fasi lunghe: uno 21s" in r.stdout or "fasi lunghe: uno 22s" in r.stdout, r.stdout
     assert "due" not in r.stdout.split("fasi lunghe:")[1]  # le fasi brevi non escono
+
+
+def test_windows_accende_con_le_opzioni_del_collegamento_di_quella_versione():
+    # La 1.0.25 parte con il solo tray.py: con -E -s -S moriva subito e non scriveva niente.
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    corpo = s[s.index("function Accendi"):s.index("function Aspetta-Lettura")]
+    assert "CreateShortcut" in corpo and "$collegamento.Arguments" in corpo
+    assert "TargetPath -like" in corpo  # solo se il collegamento punta a QUESTA cartella
+    assert "'-E', '-s', '-S'" in corpo   # e se non c'e', le opzioni di oggi
