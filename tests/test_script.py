@@ -371,3 +371,9 @@ def test_le_prove_che_si_saltavano_girano_su_github():
     for prova in ("test_online_ssh.py", "test_grafo_accenti.py", "test_riservatezza.py"):
         assert prova in s
     assert "openssh-server" in s
+
+
+def test_windows_dice_perche_resta_la_cartella_vecchia_vuota():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "NOTA: la cartella vuota si e'' lasciata togliere" in s and "NOTA: la cartella vuota e' occupata" in s

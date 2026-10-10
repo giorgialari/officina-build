@@ -314,6 +314,15 @@ function Scenario-Aggiornamento([string]$modo) {
         $fineTolta = (Get-Date).AddSeconds(90)
         while ((Test-Path $vecchia) -and (Get-Date) -lt $fineTolta) { Start-Sleep 5 }
         $rimasto = if (Test-Path $vecchia) { ((Get-ChildItem $vecchia -Recurse -Force -ErrorAction SilentlyContinue | Select-Object -First 8 | ForEach-Object { $_.FullName.Substring($vecchia.Length) }) -join ' ; ') } else { '' }
+        if ((Test-Path $vecchia) -and ($rimasto -eq '')) {
+            # Vuota ma ancora li': si prova a toglierla. Se si toglie, nessuno la teneva (l'ha ricreata qualcuno); se no, il messaggio
+            # di Windows dice che e' occupata, e si elencano i programmi accesi che nominano la vecchia cartella.
+            try { Remove-Item $vecchia -Force -ErrorAction Stop; Write-Host '       NOTA: la cartella vuota si e'' lasciata togliere a mano: nessun programma la teneva occupata' }
+            catch {
+                $chi = (Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*AI Brain*' } | ForEach-Object { $_.Name }) -join ', '
+                Write-Host "       NOTA: la cartella vuota e' occupata ($(([string]$_.Exception.Message).Substring(0, [Math]::Min(70, ([string]$_.Exception.Message).Length)))); programmi che nominano AI Brain: $chi"
+            }
+        }
         # Una cartella VUOTA puo' restare finche' un programma ha li' il suo «dove sono»: non e' un residuo. Vale se non ci sono file.
         Controlla ((-not (Test-Path $vecchia)) -or ($rimasto -eq '')) "la cartella Programs\AI Brain non ha piu' file (rimasto: $rimasto)"
     }
