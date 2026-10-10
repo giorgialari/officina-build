@@ -1,0 +1,48 @@
+# Le prove degli script e dei workflow di questo repository, a ogni modifica (pochi secondi, nessun codice di Memdoria).
+# Servono a non rompere il collaudo senza accorgersene: sintassi dei workflow, regole degli script, cifratura dei registri.
+name: Script
+run-name: Script · ${{ github.event.head_commit.message || 'a mano' }}
+
+on:
+  push:
+    paths: ["scripts/**", "tests/**", ".github/**", "chiave-prova/**", "versioni-in-uso.json"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Prove degli script e dei workflow
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Controllo dei file di workflow
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7 > /dev/null
+          ./actionlint
+      - name: Prove
+        run: |
+          python -m pip install -q pytest cryptography
+          python -m pytest -q tests
+  windows:
+    name: Prove degli script su PowerShell
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sintassi di tutti gli script PowerShell
+        shell: powershell
+        run: |
+          $ko = 0
+          foreach ($f in Get-ChildItem scripts, tests -Filter *.ps1) {
+            $err = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$err)
+            if ($err) { Write-Host "MALE $($f.Name): $($err[0].Message) riga $($err[0].Extent.StartLineNumber)"; $ko++ } else { Write-Host "OK   $($f.Name)" }
+          }
+          if ($ko) { exit 1 }
+      - name: Regola della lettura finita
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\lettura.tests.ps1
+          exit $LASTEXITCODE

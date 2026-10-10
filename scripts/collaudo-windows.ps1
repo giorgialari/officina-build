@@ -85,6 +85,8 @@ function Accendi([string]$app) {
     Start-Process "$app\runtime\python\AI Brain.exe" -ArgumentList '-E', '-s', '-S', "`"$app\runtime\app\tray.py`"" -WorkingDirectory $app | Out-Null
 }
 
+. "$PSScriptRoot\lettura.ps1"   # Esito-Lettura: la regola «lettura finita», provata da tests\lettura.tests.ps1
+
 function Aspetta-Lettura([string]$dati, [int]$minuti = 12) {
     # «finita» = done (conferma della finestra) oppure «Fatto» (versioni nuove) oppure, per le versioni vecchie che non lo
     # scrivono, 60 secondi dopo «Grafo»/«Pronto» (le entita' arrivano un attimo dopo).
@@ -94,10 +96,11 @@ function Aspetta-Lettura([string]$dati, [int]$minuti = 12) {
         Remove-Item "$dati\lingua-da-scegliere" -Recurse -Force -ErrorAction SilentlyContinue
         try {
             $p = Get-Content "$dati\progress.json" -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($p.error) { return $p }
-            $testi = @($p.events | ForEach-Object { $_.text })
-            if ($p.done -or @($testi | Where-Object { $_ -match '^Fatto' }).Count -gt 0) { return $p }
-            if (@($testi | Where-Object { $_ -match '^(Grafo|Pronto)' }).Count -gt 0) { $visto++; if ($visto -ge 6) { return $p } }
+            switch (Esito-Lettura $p) {
+                0 { return $p }
+                2 { return $p }
+                3 { $visto++; if ($visto -ge 6) { return $p } }
+            }
         } catch { }
     }
     return $null
