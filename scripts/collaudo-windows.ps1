@@ -64,8 +64,14 @@ function Metti-Licenza([string]$app, [string]$dati) {
     $chiavi = "$env:USERPROFILE\.config\ai-brain-licenze"
     New-Item -ItemType Directory -Force $chiavi | Out-Null
     Copy-Item $Chiave "$chiavi\chiave-privata.pem" -Force
-    $licenza = (& python "$Codice\backend\app\licenza.py" nuova --nome 'Collaudo' --email 'collaudo@example.invalid' --computer $codice --mesi 1 | Select-Object -Last 1).Trim()
+    $uscita = & python "$Codice\backend\app\licenza.py" nuova --nome 'Collaudo' --email 'collaudo@example.invalid' --computer $codice --mesi 1 2>&1
+    $licenza = ($uscita | Select-Object -Last 1).ToString().Trim()
     Controlla ($licenza -like 'AIB1.*') 'licenza di prova creata'
+    if ($licenza -notlike 'AIB1.*') {
+        New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
+        "codice computer: [$codice]`n$($uscita | Out-String)" | Set-Content "$env:RUNNER_TEMP\riservato\licenza.log"
+        throw 'Senza licenza il collaudo non puo continuare'
+    }
     [IO.File]::WriteAllText("$dati\licenza.txt", $licenza)
 }
 

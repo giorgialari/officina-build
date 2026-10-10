@@ -256,6 +256,10 @@ jobs:
         node-version: ${{ env.NODE }}
     - name: Pagine
       run: scripts/riservato.sh pagine codice 'built|Successfully|error' -- bash deploy/comune/pagine.sh "$RUNNER_TEMP/pagine"
+    - name: uv (lo usa lo script del dmg per Python)
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
+        test -x "$HOME/.local/bin/uv" && echo "uv pronto"
     - name: Modelli della ricerca
       run: |
         python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
@@ -353,18 +357,22 @@ jobs:
         echo "Il server non risponde dopo 5 minuti"; exit 1
     - name: Lo provo come una persona (salvare, cercare, copia di sicurezza)
       run: |
-        set -e
         T=$(grep '^BRAIN_TOKEN=' codice/deploy/server/.env | cut -d= -f2)
         H="Authorization: Bearer $T"
-        curl -fsS -H "$H" http://127.0.0.1:8765/admin/stats > /dev/null && echo "OK   le statistiche rispondono"
-        R=$(curl -fsS -X POST -H "$H" -H 'Content-Type: application/json' http://127.0.0.1:8765/admin/remember \
-          -d '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}')
-        echo "$R" | grep -q '"created"' && echo "OK   una memoria si salva"
+        B=http://127.0.0.1:8765
+        mkdir -p "$RUNNER_TEMP/riservato"; D="$RUNNER_TEMP/riservato/risposte.log"; : > "$D"
+        KO=0
+        controlla() { if [ "$1" = 0 ]; then echo "  OK   $2"; else echo "  MALE $2"; KO=$((KO+1)); fi; }
+        R=$(curl -sS -H "$H" "$B/admin/stats" 2>&1); echo "stats: $R" >> "$D"
+        echo "$R" | grep -q '"memories"'; controlla $? "le statistiche rispondono"
+        R=$(curl -sS -X POST -H "$H" -H 'Content-Type: application/json' "$B/admin/remember" -d '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' 2>&1); echo "remember: $R" >> "$D"
+        echo "$R" | grep -q '"status":"created"'; controlla $? "una memoria si salva"
         sleep 5
-        curl -fsS -X POST -H "$H" -H 'Content-Type: application/json' http://127.0.0.1:8765/admin/search -d '{"query":"gestionale Alfa","limit":5}' \
-          | grep -q 'Alfa' && echo "OK   la memoria si ritrova con la ricerca"
-        S=$(curl -fsS -H "$H" http://127.0.0.1:8765/admin/stats)
-        echo "$S" | grep -q '"memories":1' && echo "OK   il conto delle memorie e' giusto"
+        R=$(curl -sS -X POST -H "$H" -H 'Content-Type: application/json' "$B/admin/search" -d '{"query":"gestionale Alfa","limit":5}' 2>&1); echo "search: $R" >> "$D"
+        echo "$R" | grep -q 'Alfa'; controlla $? "la memoria si ritrova con la ricerca"
+        R=$(curl -sS -H "$H" "$B/admin/stats" 2>&1); echo "stats dopo: $R" >> "$D"
+        echo "$R" | grep -q '"memories":1'; controlla $? "il conto delle memorie e' giusto"
+        [ "$KO" = 0 ]
     - name: Il server si riavvia e le memorie ci sono ancora
       run: |
         set -e
@@ -486,6 +494,10 @@ jobs:
         node-version: ${{ env.NODE }}
     - name: Pagine
       run: scripts/riservato.sh pagine codice 'built|Successfully|error' -- bash deploy/comune/pagine.sh "$RUNNER_TEMP/pagine"
+    - name: uv (lo usa lo script del dmg per Python)
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
+        test -x "$HOME/.local/bin/uv" && echo "uv pronto"
     - name: Modelli della ricerca
       run: |
         python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
