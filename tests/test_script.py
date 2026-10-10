@@ -416,3 +416,10 @@ def test_windows_rifa_la_richiesta_di_aggiornamento_se_la_versione_di_prima_non_
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "$ultimaRichiesta" in s and "AddMinutes(2)" in s
+
+
+def test_windows_dice_chi_tiene_occupata_la_cartella_vecchia_con_handle():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "handle64.exe" in s and "NOTA handle:" in s
+    assert s.index("handle64.exe") < s.index("NOTA: la cartella e' occupata")  # prima di dire che e' occupata si cerca chi la tiene
