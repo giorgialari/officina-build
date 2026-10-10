@@ -452,3 +452,10 @@ def test_lo_schermo_finto_non_si_azzera_quando_si_chiude_l_ultimo_programma():
     s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "prove.yml").read_text(encoding="utf-8")
     assert s.count("xvfb-run -a -s \"-screen 0 1280x1024x24 -noreset\"") == 2
     assert "xvfb-run -a python" not in s
+
+
+def test_windows_riavvia_la_versione_di_prima_se_l_aggiornamento_dall_app_non_parte():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert "$riavvii -lt 2" in s and "AddMinutes(5)" in s and "riavvio la versione di prima" in s
+    assert "(Processi-Di $nuova).Count -eq 0 -and (Test-Path $nuova)" in s  # niente accensione di una cartella che non c'e'

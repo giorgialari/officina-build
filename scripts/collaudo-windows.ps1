@@ -303,9 +303,20 @@ function Scenario-Aggiornamento([string]$modo) {
         $fine = (Get-Date).AddMinutes(15)
         $versioneNuova = (Get-Content "$Codice\VERSION" -TotalCount 1).Trim()
         function Versione-Installata { try { (Get-Content "$nuova\runtime\app\VERSION" -TotalCount 1 -ErrorAction Stop).Trim() } catch { '' } }
-        $ultimaRichiesta = Get-Date
+        $ultimaRichiesta = Get-Date; $ultimoRiavvio = Get-Date; $riavvii = 0
         while ((Get-Date) -lt $fine -and (Versione-Installata) -ne $versioneNuova) {
             Start-Sleep 10
+            # Se dopo 5 minuti non si e' mosso niente (nessun file scaricato), come farebbe la persona si chiude e si riapre la
+            # versione di prima: al riavvio ricontrolla gli aggiornamenti. Al massimo due volte.
+            if ($riavvii -lt 2 -and (Get-Date) -gt $ultimoRiavvio.AddMinutes(5) -and -not (Test-Path "$datiVecchi\aggiornamenti")) {
+                Write-Host "       NOTA: nessun aggiornamento dopo 5 minuti: riavvio la versione di prima (come farebbe la persona)"
+                (Processi-Di $vecchia) | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+                Start-Sleep 8
+                Accendi $vecchia
+                Remove-Item "$datiVecchi\aggiorna.request" -Force -ErrorAction SilentlyContinue
+                Set-Content "$datiVecchi\aggiorna.request" 'aggiorna'
+                $riavvii++; $ultimoRiavvio = Get-Date; $ultimaRichiesta = Get-Date
+            }
             # La versione di prima legge la richiesta solo a certi momenti: se e' ancora li dopo 2 minuti la si rifa, come chi preme di nuovo «Aggiorna».
             if ((Test-Path "$datiVecchi\aggiorna.request") -and ((Get-Date) -gt $ultimaRichiesta.AddMinutes(2))) {
                 Remove-Item "$datiVecchi\aggiorna.request" -Force -ErrorAction SilentlyContinue
@@ -332,7 +343,7 @@ function Scenario-Aggiornamento([string]$modo) {
     Controlla (Test-Path "$nuova\runtime\python\AI Brain.exe") 'la versione nuova e'' in Programs\Memdoria'
 
     # Se l'aggiornamento non l'ha riaccesa (sessione senza schermo vero), la si accende come farebbe la persona.
-    if ((Processi-Di $nuova).Count -eq 0) { Accendi $nuova }
+    if ((Processi-Di $nuova).Count -eq 0 -and (Test-Path $nuova)) { Accendi $nuova }
     $datiNuovi = "$Local\Memdoria"
     $p = Aspetta-Lettura $datiNuovi
     Richiedi ($null -ne $p -and -not $p.error) "dopo l'aggiornamento la lettura finisce senza errori ($($p.error))"
