@@ -79,8 +79,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.versioni.outputs.matrice) }}
     env:
-      AI_BRAIN_VENDOR: ${{ github.workspace }}\..\vendor
-      AI_BRAIN_BUILD: ${{ github.workspace }}\..\build
+      AI_BRAIN_VENDOR: ${{ github.workspace }}\lavoro\vendor
+      AI_BRAIN_BUILD: ${{ github.workspace }}\lavoro\build
     defaults:
       run:
         shell: bash
@@ -268,9 +268,9 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.versioni.outputs.matrice) }}
     env:
-      AI_BRAIN_VENDOR: ${{ github.workspace }}/../vendor
-      AI_BRAIN_BUILD: ${{ github.workspace }}/../build
-      AI_BRAIN_DIST: ${{ github.workspace }}/../dist
+      AI_BRAIN_VENDOR: ${{ github.workspace }}/lavoro/vendor
+      AI_BRAIN_BUILD: ${{ github.workspace }}/lavoro/build
+      AI_BRAIN_DIST: ${{ github.workspace }}/lavoro/dist
     steps:
     - uses: actions/checkout@v4
     - uses: actions/download-artifact@v4
@@ -516,8 +516,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 120
     env:
-      AI_BRAIN_VENDOR: ${{ github.workspace }}\..\vendor
-      AI_BRAIN_BUILD: ${{ github.workspace }}\..\build
+      AI_BRAIN_VENDOR: ${{ github.workspace }}\lavoro\vendor
+      AI_BRAIN_BUILD: ${{ github.workspace }}\lavoro\build
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/codice
@@ -592,9 +592,9 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 120
     env:
-      AI_BRAIN_VENDOR: ${{ github.workspace }}/../vendor
-      AI_BRAIN_BUILD: ${{ github.workspace }}/../build
-      AI_BRAIN_DIST: ${{ github.workspace }}/../dist
+      AI_BRAIN_VENDOR: ${{ github.workspace }}/lavoro/vendor
+      AI_BRAIN_BUILD: ${{ github.workspace }}/lavoro/build
+      AI_BRAIN_DIST: ${{ github.workspace }}/lavoro/dist
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/codice
