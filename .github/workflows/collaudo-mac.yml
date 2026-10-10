@@ -66,9 +66,9 @@ jobs:
           - nome: nuovo
             riferimento: ${{ inputs.nuovo }}
     env:
-      AI_BRAIN_VENDOR: ${{ runner.temp }}/vendor
-      AI_BRAIN_BUILD: ${{ runner.temp }}/build
-      AI_BRAIN_DIST: ${{ runner.temp }}/dist
+      AI_BRAIN_VENDOR: ${{ github.workspace }}/../vendor
+      AI_BRAIN_BUILD: ${{ github.workspace }}/../build
+      AI_BRAIN_DIST: ${{ github.workspace }}/../dist
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -106,10 +106,12 @@ jobs:
         run: |
           pip3 install --quiet --break-system-packages cryptography 2>/dev/null || pip3 install --quiet cryptography
           scripts/riservato.sh dmg codice 'dmg|Pronto' -- bash deploy/mac/build-mac.sh release
+      - name: Il dmg in una cartella della corsa
+        run: mkdir -p uscita && cp "$AI_BRAIN_DIST"/AI-Brain-*-mac-arm64.dmg uscita/
       - uses: actions/upload-artifact@v4
         with:
           name: dmg-${{ matrix.nome }}
-          path: ${{ runner.temp }}/dist/AI-Brain-*-mac-arm64.dmg
+          path: uscita/*.dmg
           retention-days: 1
           compression-level: 0
       - name: Dettaglio cifrato (solo se rosso)

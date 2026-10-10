@@ -10,6 +10,14 @@ on:
       riferimento:
         description: "Ramo o commit del codice (la versione nuova)"
         default: main
+  workflow_call:
+    inputs:
+      riferimento:
+        type: string
+        default: main
+    secrets:
+      CODICE_CHIAVE:
+        required: true
 
 permissions:
   contents: read
