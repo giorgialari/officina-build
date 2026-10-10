@@ -429,3 +429,18 @@ def test_windows_dice_comando_e_padre_del_processo_che_tiene_la_cartella():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "NOTA   comando:" in s and "lanciato da:" in s and "questo collaudo e' il processo" in s
+
+
+def test_rilascio_server_la_firma_resta_leggibile_a_tutti_dentro_l_immagine():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
+    blocco = s[s.index("Immagine, firma, compressione e controlli"):s.index("Allegato cifrato", s.index("Immagine, firma, compressione e controlli"))]
+    assert blocco.index("umask 077") < blocco.index("umask 022") < blocco.index("chmod 644 impronte/impronte.json.firma") < blocco.index("docker cp impronte/impronte.json.firma")
+
+
+def test_rilascio_windows_il_passo_dei_modelli_non_si_ferma_agli_avvisi_di_python():
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
+    inizio = s.index("    - name: Modelli della ricerca\n      shell: powershell")
+    passo = s[inizio:s.index("    - name: App e impronte", inizio)]
+    assert "$ErrorActionPreference = 'Continue'" in passo and "*> $null" not in passo

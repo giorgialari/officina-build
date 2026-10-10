@@ -552,11 +552,13 @@ jobs:
       shell: powershell
       working-directory: codice
       run: |
+        # «Continue»: gli avvisi di python sullo stderr non sono errori (con «Stop» PowerShell si fermava al primo, in silenzio).
+        $ErrorActionPreference = 'Continue'
         python -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
         $m = "$env:AI_BRAIN_VENDOR\common\models"
         New-Item -ItemType Directory -Force $m | Out-Null
         $env:FASTEMBED_CACHE_PATH = $m; $env:HF_HOME = "$m\huggingface"; $env:HF_HUB_DISABLE_XET = '1'; $env:PYTHONPATH = (Get-Location).Path
-        python scripts\download_models.py *> $null
+        python scripts\download_models.py *> "$env:RUNNER_TEMP\modelli.log"
         exit $LASTEXITCODE
     - name: App e impronte
       shell: powershell
@@ -717,6 +719,10 @@ jobs:
         umask 077; printf '%s\n' "$CHIAVE_FIRMA" > "$RUNNER_TEMP/firma.pem"
         python3 backend/app/integrita.py firma impronte/impronte.json --chiave "$RUNNER_TEMP/firma.pem" --versione "$V" --sistema server
         rm -f "$RUNNER_TEMP/firma.pem"
+        # Con umask 077 (messa per la chiave) la firma nasceva leggibile solo dal proprietario: dentro l'immagine e' di root e il
+        # brain, che gira come utente «brain», non la leggeva («manca l'elenco delle impronte o la sua firma»).
+        umask 022
+        chmod 644 impronte/impronte.json.firma
         id=$(docker create --platform "linux/$ARCH" "ai-brain-server:$V-$ARCH-base")
         docker cp impronte/impronte.json.firma "$id:/app/impronte.json.firma"
         docker commit "$id" "ai-brain-server:$V" > /dev/null
