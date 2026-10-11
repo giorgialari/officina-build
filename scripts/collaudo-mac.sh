@@ -246,13 +246,15 @@ fi
 
 if [ "${SOLO_PULITA:-false}" != true ]; then
 say "B. Aggiornamento dall'app dalla versione di prima"
-# Si collaudano entrambi i pacchetti distribuiti: la 1.0.32 usa Memdoria, la 1.0.33 Memdoria-AI-Brain.
+# Le versioni distribuite usano tre nomi del bundle; dalla 1.0.33 i dati hanno lo stesso percorso.
 VER_V=$(basename "$VECCHIO" | sed -E 's/^AI-Brain-([0-9.]+)-.*/\1/')
-[ "$VER_V" = 1.0.32 ] || [ "$VER_V" = 1.0.33 ] || { male "la versione di partenza deve essere 1.0.32|1.0.33, trovata $VER_V"; exit 1; }
+[ "$VER_V" = 1.0.32 ] || [ "$VER_V" = 1.0.33 ] || [ "$VER_V" = 1.0.34 ] || { male "la versione di partenza deve essere 1.0.32|1.0.33|1.0.34, trovata $VER_V"; exit 1; }
 NOME_V="Memdoria"
 [ "$VER_V" = 1.0.33 ] && NOME_V="Memdoria-AI-Brain"
+[ "$VER_V" = 1.0.34 ] && NOME_V="Memdoria AI Brain"
 APP_V="/Applications/$NOME_V.app"
-DATI_V="$SUPPORTO/$NOME_V"
+DATI_V="$SUPPORTO/Memdoria-AI-Brain"
+[ "$VER_V" = 1.0.32 ] && DATI_V="$SUPPORTO/Memdoria"
 monta_e_copia "$VECCHIO" "$NOME_V.app"; controlla $? "$NOME_V.app (versione $VER_V) copiata"
 licenza "$APP_V" "$DATI_V"
 # La versione di prima guarda l'elenco delle versioni in questo file, firmato con la chiave di prova.
@@ -267,7 +269,7 @@ aspetta_lettura "$DATI_V"; richiedi $? "la versione $VER_V finisce la lettura"
 api "$DATI_V" POST /admin/remember '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
 api "$DATI_V" POST /admin/remember '{"text":"Il server di Verdi Srl e in Hetzner a Norimberga.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
 PRIMA=$(conta "$DATI_V" memories); [ "${PRIMA:-0}" -ge 2 ]; controlla $? "memorie salvate prima dell'aggiornamento: ${PRIMA:-0}"
-VOCE_V=ai-brain; [ "$VER_V" = 1.0.33 ] && VOCE_V=memdoria-ai-brain
+VOCE_V=ai-brain; [ "$VER_V" != 1.0.32 ] && VOCE_V=memdoria-ai-brain
 if collega_ai "$DATI_V" "$VOCE_V"; then HA_VOCI=1; ok "la versione $VER_V ha collegato le AI"; else HA_VOCI=0; echo "  --   la versione $VER_V non ha collegato le AI da sola (probabile conferma a schermo): salto i controlli sulle voci dopo l'aggiornamento"; fi
 sleep 10
 DATI_N="$SUPPORTO/Memdoria-AI-Brain"

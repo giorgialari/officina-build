@@ -505,11 +505,11 @@ def test_windows_stampa_cosa_dicono_i_registri_della_versione_di_prima_sugli_agg
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "NOTA log:" in s and "nessuna riga sugli aggiornamenti" in s
     assert s.index("NOTA log:") < s.index("NOTA: aggiornamento dall'app fermo.")
-def test_collaudo_aggiorna_dalla_1032_e_dalla_1033():
+def test_collaudo_aggiorna_dalla_1032_1033_e_1034():
     import json
 
     versioni = json.loads((Path(__file__).resolve().parents[1] / "versioni-in-uso.json").read_text())
-    assert versioni == ["1.0.32", "1.0.33"]
+    assert versioni == ["1.0.32", "1.0.33", "1.0.34"]
 
 
 def test_il_collaudo_controlla_il_pulsante_sulla_pagina_rimasta_aperta():
@@ -525,13 +525,14 @@ def test_il_collaudo_controlla_il_pulsante_sulla_pagina_rimasta_aperta():
         assert "feed.py" in script
 
 
-def test_il_collaudo_della_migrazione_distingue_1032_e_1033():
+def test_il_collaudo_della_migrazione_distingue_1032_1033_e_1034():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert '1.0.32|1.0.33' in mac and '$SUPPORTO/Memdoria' in mac
+    assert '1.0.32|1.0.33|1.0.34' in mac and '$SUPPORTO/Memdoria' in mac
     assert 'NOME_V="Memdoria-AI-Brain"' in mac
+    assert 'NOME_V="Memdoria AI Brain"' in mac
     assert "$HOME/.config/memdoria-ai-brain/token" in mac and "mcp_servers.memdoria-ai-brain" in mac
-    assert "@('1.0.32', '1.0.33')" in win and '$Local\\Memdoria"' in win
+    assert "@('1.0.32', '1.0.33', '1.0.34')" in win and '$Local\\Memdoria"' in win
     assert "$nomeVecchio = if ($separata) { 'Memdoria' } else { 'Memdoria-AI-Brain' }" in win
     assert 'memdoria-ai-brain\\token' in win and 'mcp_servers\\.memdoria-ai-brain' in win
 
@@ -583,11 +584,11 @@ def test_mac_chiede_il_collegamento_dei_dati_1032_solo_se_si_parte_dalla_1032():
     assert 'trasloco fatto: Memdoria e' in mac
 
 
-def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_entrambi_gli_aggiornamenti():
+def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_tutti_gli_aggiornamenti():
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert 'Avvia-Controllo-Motore' in win
     assert '--server-in-riavvio' in win
-    assert "@('1.0.32', '1.0.33')" in win
+    assert "@('1.0.32', '1.0.33', '1.0.34')" in win
     assert '$pidVecchi' in win and '$nuovoTray' in win
     assert 'VERSION' in win and '$versioneNuova' in win
     assert '$osservaMotore = Avvia-Controllo-Motore' in win
