@@ -596,3 +596,12 @@ def test_windows_aspetta_l_eseguibile_prima_di_dichiarare_completa_l_installazio
     assert 'while (-not (Test-Path $exeNuovo)' in win
     assert win.index('while (-not (Test-Path $exeNuovo)') < win.index("Controlla (Test-Path $exeNuovo)")
     assert "Name = 'Memdoria AI Brain.exe'" in win and '/api/setup-info' in win and '-Milliseconds 250' in win
+
+
+def test_windows_aspetta_la_fine_dell_installer_prima_del_nuovo_processo():
+    # VERSION ed eseguibile possono apparire mentre la copia continua: nel collaudo 38155424023
+    # l'installer era ancora acceso dopo 90 secondi e la prova ha fermato un aggiornamento sano.
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert 'while ((Get-Date) -lt $fineInstaller -and (Installer-InCorso))' in win
+    assert win.index('while ((Get-Date) -lt $fineInstaller -and (Installer-InCorso))') < win.index('$fineTray =')
+    assert 'Richiedi (-not (Installer-InCorso))' in win

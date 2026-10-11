@@ -31,6 +31,12 @@ function Controlla([bool]$ok, [string]$cosa) {
     if ($ok) { Write-Host "  OK   $cosa" -ForegroundColor Green } else { Write-Host "  MALE $cosa" -ForegroundColor Red; $Fallimenti.Add($cosa) }
 }
 
+function Installer-InCorso {
+    return @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -like '*AI-Brain-*windows-x64*' -or $_.Path -like '*\is-*.tmp\*'
+    }).Count -gt 0
+}
+
 function Prepara-Chat {
     $casa = $env:USERPROFILE
     New-Item -ItemType Directory -Force "$casa\.codex" | Out-Null
@@ -435,6 +441,12 @@ function Scenario-Aggiornamento([string]$modo) {
     Controlla (Test-Path $exeNuovo) 'la versione nuova e'' in Programs\Memdoria-AI-Brain'
     $verInstallata = [string](Get-Content "$nuova\runtime\app\VERSION" -TotalCount 1 -ErrorAction SilentlyContinue)
     Richiedi ($verInstallata.Trim() -eq $versioneNuova) "i file installati sono davvero della $versioneNuova"
+
+    # L'installer può ancora copiare file e preparare la riapertura quando VERSION ed eseguibile sono già presenti.
+    # Il monitor dell'Engine è partito prima dell'aggiornamento: questa attesa non nasconde uno stato Errore.
+    $fineInstaller = (Get-Date).AddMinutes(6)
+    while ((Get-Date) -lt $fineInstaller -and (Installer-InCorso)) { Start-Sleep -Seconds 5 }
+    Richiedi (-not (Installer-InCorso)) "l'installer della $versioneNuova ha finito prima di controllare la riapertura ($modo)"
 
     # La versione nuova deve avere un processo tray diverso da quello della versione precedente.
     # Nel percorso dall'app la riapertura automatica e' parte del collaudo; l'installer silenzioso puo' richiedere un avvio manuale.
