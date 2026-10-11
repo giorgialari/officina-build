@@ -564,6 +564,12 @@ def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_entrambi_g
     assert 'Controlla-Motore $datiNuovi' not in win
 
 
+def test_windows_attende_il_motore_anche_se_il_primo_avvio_richiede_piu_di_un_minuto():
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert 'Wait-Job -Job $osservaMotore -Timeout 180' in win
+    assert 'monitor non terminato entro 180 secondi' in win
+
+
 def test_windows_aspetta_l_eseguibile_prima_di_dichiarare_completa_l_installazione():
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert 'while (-not (Test-Path $exeNuovo)' in win

@@ -451,8 +451,11 @@ function Scenario-Aggiornamento([string]$modo) {
     }
     Richiedi ($nuovoTray.Count -gt 0) "prima riapertura della $versioneNuova con un nuovo processo ($modo)"
     $datiNuovi = "$Local\Memdoria-AI-Brain"
-    $finitoMotore = Wait-Job -Job $osservaMotore -Timeout 70
-    $esitoMotore = if ($finitoMotore) { Receive-Job -Job $osservaMotore -ErrorAction SilentlyContinue | Select-Object -Last 1 } else { $null }
+    # Il primo avvio può impiegare oltre un minuto per accendere grafo e ricerca. Il job osserva già l'Engine
+    # dall'inizio dell'installazione: attendere il suo esito non perde un eventuale stato Errore temporaneo.
+    $finitoMotore = Wait-Job -Job $osservaMotore -Timeout 180
+    $esitoMotore = if ($finitoMotore) { Receive-Job -Job $osservaMotore -ErrorAction SilentlyContinue | Select-Object -Last 1 } `
+        else { [pscustomobject]@{ visto = $false; errore = $false; motivo = 'monitor non terminato entro 180 secondi' } }
     if (-not $finitoMotore) { Stop-Job -Job $osservaMotore -ErrorAction SilentlyContinue }
     Remove-Job -Job $osservaMotore -Force -ErrorAction SilentlyContinue
     Controlla ($null -ne $esitoMotore -and $esitoMotore.visto -and -not $esitoMotore.errore) `
