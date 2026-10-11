@@ -40,6 +40,10 @@ function Installer-InCorso {
 function Prepara-Chat {
     $casa = $env:USERPROFILE
     New-Item -ItemType Directory -Force "$casa\.codex" | Out-Null
+    # Le chat da sole non indicano che Claude Code sia installato. Simuliamo anche il client per collaudare il collegamento.
+    $binClaude = "$casa\AppData\Roaming\npm"
+    New-Item -ItemType Directory -Force $binClaude | Out-Null
+    Set-Content "$binClaude\claude.cmd" '@echo off' -Encoding ASCII
     $ag = "$casa\.gemini\antigravity\brain\8bd7e99a-26db\.system_generated\logs"
     New-Item -ItemType Directory -Force $ag | Out-Null
     @(

@@ -13,6 +13,13 @@ sys.path.insert(0, str(SCRIPT))
 import lettura_finita  # noqa: E402
 
 
+def test_il_collaudo_windows_simula_un_client_claude_installato():
+    script = (SCRIPT / "collaudo-windows.ps1").read_text()
+    seme = script.split("function Prepara-Chat {", 1)[1].split("\nfunction ", 1)[0]
+    assert 'claude.cmd' in seme
+    assert 'AppData\\Roaming\\npm' in seme
+
+
 # --- lettura_finita: quando la lettura delle conversazioni e' finita --------------------------------------------------------
 @pytest.mark.parametrize("progresso,atteso", [
     ({"done": False, "events": []}, 1),
