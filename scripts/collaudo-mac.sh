@@ -293,7 +293,11 @@ controlla_nome_dock; richiedi $? "dopo l'aggiornamento la prima apertura automat
 controlla_primo_avvio "$DATI_N"
 aspetta_lettura "$DATI_N"; richiedi $? "dopo l'aggiornamento la lettura finisce senza errori"
 wait "$PID_MOTORE"; controlla $? "Engine senza stato Errore durante la prima riapertura dopo $VER_V"
-[ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ] && [ -L /Applications/Memdoria-AI-Brain.app ] && [ -L /Applications/Memdoria.app ]; controlla $? "nome senza trattini nel Dock, con collegamenti per le versioni precedenti"
+if [ "$VER_V" = 1.0.34 ]; then
+  [ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ]; controlla $? "la 1.0.34 conserva il nome senza trattini dopo l'aggiornamento"
+else
+  [ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ] && [ -L /Applications/Memdoria-AI-Brain.app ] && [ -L /Applications/Memdoria.app ]; controlla $? "nome senza trattini nel Dock, con collegamenti per le versioni precedenti"
+fi
 if [ "$VER_V" = 1.0.32 ]; then
   [ -L "$SUPPORTO/Memdoria" ]; controlla $? "trasloco fatto: Memdoria e' un collegamento verso Memdoria-AI-Brain"
 fi
@@ -304,7 +308,7 @@ ICONE=$(pgrep -f 'runtime/app/tray\.py$' | wc -l | tr -d ' ')
 [ "${ICONE:-0}" -le 1 ]; controlla $? "una sola icona accesa: ${ICONE:-0} (nessuna versione di prima rimasta)"
 if [ "${ICONE:-0}" -gt 1 ]; then mkdir -p "$RUNNER_TEMP/riservato"; ps -axo pid,ppid,lstart,command | grep 'tray\.py' | grep -v grep >> "$RUNNER_TEMP/riservato/dettagli.log"; fi
 if [ "$HA_VOCI" = 1 ]; then collega_ai "$DATI_N" memdoria-ai-brain && ! grep -q '"ai-brain"' "$HOME/.claude.json" && ! grep -q 'Application Support/Memdoria"' "$HOME/.claude.json"; controlla $? "le voci delle AI usano il nome nuovo e non puntano piu' alla cartella vecchia"; fi
-if [ "$HA_VOCI" = 1 ]; then grep -q 'mcp_servers.memdoria-ai-brain' "$HOME/.codex/config.toml" && ! grep -q 'mcp_servers.ai-brain' "$HOME/.codex/config.toml"; controlla $? "anche Codex usa la voce nuova"; fi
+if [ "$HA_VOCI" = 1 ] && [ -f "$HOME/.codex/config.toml" ]; then grep -q 'mcp_servers.memdoria-ai-brain' "$HOME/.codex/config.toml" && ! grep -q 'mcp_servers.ai-brain' "$HOME/.codex/config.toml"; controlla $? "anche Codex usa la voce nuova"; fi
 lingua_si_cambia "$DATI_N"; controlla $? "dopo l'aggiornamento il cambio lingua funziona"
 pagina_nel_browser "$DATI_N" "dopo l'aggiornamento"
 spegni

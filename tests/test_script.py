@@ -584,6 +584,13 @@ def test_mac_chiede_il_collegamento_dei_dati_1032_solo_se_si_parte_dalla_1032():
     assert 'trasloco fatto: Memdoria e' in mac
 
 
+def test_mac_non_esige_collegamenti_da_1034_ne_codex_se_non_installato():
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    assert 'if [ "$VER_V" = 1.0.34 ]; then' in mac
+    assert 'la 1.0.34 conserva il nome senza trattini' in mac
+    assert '[ -f "$HOME/.codex/config.toml" ]' in mac
+
+
 def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_tutti_gli_aggiornamenti():
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert 'Avvia-Controllo-Motore' in win
