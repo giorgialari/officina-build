@@ -48,7 +48,17 @@ if (controllo === '--server-in-riavvio') {
   lento = false;
   // Dopo un aggiornamento la prima lettura delle conversazioni può durare oltre mezzo minuto sulle macchine lente.
   // Restiamo nella stessa pagina e aspettiamo i dati reali, senza premere ricarica o riaprire il browser.
-  await attendiGrafoAllaPrimaLettura(pagina);
+  try {
+    await attendiGrafoAllaPrimaLettura(pagina);
+  } catch (errore) {
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const cartella = join(process.env.RUNNER_TEMP || '/tmp', 'riservato');
+    mkdirSync(cartella, { recursive: true });
+    const stato = await pagina.locator('body').innerText().catch(() => 'pagina non leggibile');
+    writeFileSync(join(cartella, 'primo-avvio.log'), `Indirizzo: ${pagina.url()}\nTesto: ${stato}\nErrori: ${errori.join('\n')}\n`);
+    throw errore;
+  }
   for (let i = 0; i < 240 && !panoramicaTornata; i++) await pagina.waitForTimeout(500);
   const grafo = await pagina.locator('[data-testid="cosmos-graph"]').count();
   const stessa = await pagina.evaluate(() => window.__primaApertura === true);
