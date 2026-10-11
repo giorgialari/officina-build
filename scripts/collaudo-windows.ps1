@@ -462,8 +462,14 @@ function Scenario-Aggiornamento([string]$modo) {
     }
     if ($nuovoTray.Count -eq 0 -and $modo -eq 'installer') {
         Accendi $nuova
-        Start-Sleep -Seconds 3
-        $nuovoTray = @(Processi-Di $nuova | Where-Object { $_.CommandLine -match 'tray\.py' -and $_.ProcessId -notin $pidVecchi })
+        # Su un Windows appena installato l'avviatore Python può richiedere più di tre secondi per apparire.
+        # Si controlla la stessa apertura, senza lanciarne una seconda.
+        $fineManuale = (Get-Date).AddSeconds(90)
+        while ((Get-Date) -lt $fineManuale) {
+            $nuovoTray = @(Processi-Di $nuova | Where-Object { $_.CommandLine -match 'tray\.py' -and $_.ProcessId -notin $pidVecchi })
+            if ($nuovoTray.Count -gt 0) { break }
+            Start-Sleep -Seconds 2
+        }
     }
     Richiedi ($nuovoTray.Count -gt 0) "prima riapertura della $versioneNuova con un nuovo processo ($modo)"
     $datiNuovi = "$Local\Memdoria-AI-Brain"
