@@ -7,7 +7,10 @@
 set -eu
 dentro=$1; fuori=$2; modello=$3
 mkdir -p "$fuori"
-chiave=$(mktemp)
+# La chiave sta in un file dentro la cartella di uscita (percorso relativo), non in /tmp: su Windows (Git Bash) mktemp dara'
+# /tmp/..., che l'openssl nativo non trova. Il trap la cancella comunque, cosi' non finisce mai nell'allegato.
+chiave="$fuori/.chiave.tmp"
+trap 'rm -f "$chiave"' EXIT
 openssl rand -hex 32 > "$chiave"
 trovati=0
 for f in "$dentro"/$modello; do
@@ -17,5 +20,4 @@ for f in "$dentro"/$modello; do
 done
 [ "$trovati" -gt 0 ] || { echo "Nessun file da proteggere in $dentro ($modello)"; exit 1; }
 openssl cms -encrypt -aes256 -binary -in "$chiave" -out "$fuori/chiave.cms" -outform DER "${GITHUB_WORKSPACE:-.}/registri.pem"
-rm -f "$chiave"
 echo "protetti $trovati file"
