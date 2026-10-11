@@ -552,9 +552,17 @@ def test_il_mac_controlla_prima_riapertura_motore_e_pagina_dopo_entrambi_gli_agg
 
 def test_il_browser_aspetta_che_la_porta_dell_app_si_apra_prima_di_provare_il_riavvio_del_server():
     pagina = (SCRIPT / "pagina.mjs").read_text(encoding="utf-8")
-    assert 'ERR_CONNECTION_REFUSED' in pagina
-    assert 'await pagina.goto(indirizzo' in pagina
-    assert 'await pagina.waitForTimeout(500)' in pagina
+    prima = pagina.split("if (controllo === '--server-in-riavvio')", 1)[1].split('const risposta =', 1)[0]
+    assert 'ERR_CONNECTION_REFUSED' in prima
+    assert "await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 90_000 })" in prima
+    assert 'await pagina.waitForTimeout(500)' in prima
+
+
+def test_il_browser_aspetta_la_fine_della_prima_lettura_prima_di_giudicare_il_grafo():
+    pagina = (SCRIPT / "pagina.mjs").read_text(encoding="utf-8")
+    assert "[data-testid=\"cosmos-graph\"]" in pagina
+    assert 'waitFor({ timeout: 120_000 })' in pagina
+    assert 'i < 240 && !panoramicaTornata' in pagina
 
 
 def test_mac_chiede_il_collegamento_dei_dati_1032_solo_se_si_parte_dalla_1032():

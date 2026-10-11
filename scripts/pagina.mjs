@@ -38,7 +38,7 @@ if (controllo === '--server-in-riavvio') {
   const limiteApertura = Date.now() + 150_000;
   for (;;) {
     try {
-      await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+      await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 90_000 });
       break;
     } catch (errore) {
       const rete = String(errore);
@@ -57,8 +57,10 @@ if (controllo === '--server-in-riavvio') {
   await pagina.screenshot({ path: `${prefisso}-attesa.png`, fullPage: true });
   await pagina.evaluate(() => { window.__primaApertura = true; });
   lento = false;
-  await pagina.locator('[data-testid="cosmos-graph"]').first().waitFor({ timeout: 30_000 });
-  for (let i = 0; i < 60 && !panoramicaTornata; i++) await pagina.waitForTimeout(500);
+  // Dopo un aggiornamento la prima lettura delle conversazioni può durare oltre mezzo minuto sulle macchine lente.
+  // Restiamo nella stessa pagina e aspettiamo i dati reali, senza premere ricarica o riaprire il browser.
+  await pagina.locator('[data-testid="cosmos-graph"]').first().waitFor({ timeout: 120_000 });
+  for (let i = 0; i < 240 && !panoramicaTornata; i++) await pagina.waitForTimeout(500);
   const grafo = await pagina.locator('[data-testid="cosmos-graph"]').count();
   const stessa = await pagina.evaluate(() => window.__primaApertura === true);
   const testoDopo = await pagina.locator('body').innerText();
