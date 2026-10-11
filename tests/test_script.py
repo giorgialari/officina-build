@@ -552,16 +552,21 @@ def test_il_mac_controlla_prima_riapertura_motore_e_pagina_dopo_entrambi_gli_agg
 
 def test_il_browser_aspetta_che_la_porta_dell_app_si_apra_prima_di_provare_il_riavvio_del_server():
     pagina = (SCRIPT / "pagina.mjs").read_text(encoding="utf-8")
+    attesa = (SCRIPT / "attesa-pagina.mjs").read_text(encoding="utf-8")
     prima = pagina.split("if (controllo === '--server-in-riavvio')", 1)[1].split('const risposta =', 1)[0]
-    assert 'ERR_CONNECTION_REFUSED' in prima
-    assert "await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 90_000 })" in prima
-    assert 'await pagina.waitForTimeout(500)' in prima
+    assert 'await apriPaginaDuranteRiavvio(pagina, indirizzo)' in prima
+    assert 'ERR_CONNECTION_REFUSED' in attesa
+    assert 'chrome-error://chromewebdata/' in attesa
+    assert "await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 90_000 })" in attesa
+    assert 'await pagina.waitForTimeout(500)' in attesa
 
 
 def test_il_browser_aspetta_la_fine_della_prima_lettura_prima_di_giudicare_il_grafo():
     pagina = (SCRIPT / "pagina.mjs").read_text(encoding="utf-8")
+    attesa = (SCRIPT / "attesa-pagina.mjs").read_text(encoding="utf-8")
     assert "[data-testid=\"cosmos-graph\"]" in pagina
-    assert 'waitFor({ timeout: 120_000 })' in pagina
+    assert 'await attendiGrafoAllaPrimaLettura(pagina)' in pagina
+    assert 'waitFor({ timeout: 240_000 })' in attesa
     assert 'i < 240 && !panoramicaTornata' in pagina
 
 

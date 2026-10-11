@@ -191,6 +191,7 @@ controlla_pulsante_aggiornamento() {
 spegni() { pkill -f "Contents/Resources/runtime" 2>/dev/null; sleep 5; pkill -9 -f "Contents/Resources/runtime" 2>/dev/null; sleep 2; }
 
 chat_finte
+bash "$(dirname "$0")/controlla-dmg-mac.sh" "$NUOVO"; richiedi $? "il disco mostra una sola app e Applicazioni"
 
 if [ "${CON_PULITA:-true}" = true ]; then
 say "A. Installazione pulita della versione nuova"

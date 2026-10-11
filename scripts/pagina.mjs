@@ -4,6 +4,7 @@
 process.on('uncaughtException', (e) => { console.log(`MALE: ${String(e?.message ?? e).split('\n').slice(0, 2).join(' | ').slice(0, 300)}`); process.exit(1); });
 process.on('unhandledRejection', (e) => { console.log(`MALE: ${String(e?.message ?? e).split('\n').slice(0, 2).join(' | ').slice(0, 300)}`); process.exit(1); });
 const { chromium } = await import('playwright');
+const { apriPaginaDuranteRiavvio, attendiGrafoAllaPrimaLettura } = await import('./attesa-pagina.mjs');
 const [indirizzo, prefisso, controllo, feedNuovo, feedAttivo] = process.argv.slice(2);
 const errori = [];
 const browser = await chromium.launch();
@@ -35,19 +36,7 @@ if (controllo === '--server-in-riavvio') {
   });
   // Nel primo avvio l'icona compare prima che il servizio apra la porta. Appena la pagina è disponibile,
   // la prova resta in quella stessa finestra per vedere l'attesa e il ritorno del grafo.
-  const limiteApertura = Date.now() + 150_000;
-  for (;;) {
-    try {
-      await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 90_000 });
-      break;
-    } catch (errore) {
-      const rete = String(errore);
-      if (!rete.includes('ERR_CONNECTION_REFUSED') && !rete.includes('ERR_CONNECTION_RESET') &&
-          !rete.includes('ERR_EMPTY_RESPONSE')) throw errore;
-      if (Date.now() >= limiteApertura) throw errore;
-      await pagina.waitForTimeout(500);
-    }
-  }
+  await apriPaginaDuranteRiavvio(pagina, indirizzo);
   await pagina.getByRole('status').filter({ hasText: 'Il server si sta riavviando: i dati tornano da soli.' }).waitFor({ timeout: 20_000 });
   await pagina.waitForTimeout(2500);
   const testo = await pagina.locator('body').innerText();
@@ -59,7 +48,7 @@ if (controllo === '--server-in-riavvio') {
   lento = false;
   // Dopo un aggiornamento la prima lettura delle conversazioni può durare oltre mezzo minuto sulle macchine lente.
   // Restiamo nella stessa pagina e aspettiamo i dati reali, senza premere ricarica o riaprire il browser.
-  await pagina.locator('[data-testid="cosmos-graph"]').first().waitFor({ timeout: 120_000 });
+  await attendiGrafoAllaPrimaLettura(pagina);
   for (let i = 0; i < 240 && !panoramicaTornata; i++) await pagina.waitForTimeout(500);
   const grafo = await pagina.locator('[data-testid="cosmos-graph"]').count();
   const stessa = await pagina.evaluate(() => window.__primaApertura === true);
