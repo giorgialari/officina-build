@@ -60,7 +60,7 @@ if (controllo === '--server-in-riavvio') {
     throw errore;
   }
   for (let i = 0; i < 240 && !panoramicaTornata; i++) await pagina.waitForTimeout(500);
-  const grafo = await pagina.locator('[data-testid="cosmos-graph"]').count();
+  const grafo = await pagina.locator('[data-testid="cosmos-graph"], .graph-state:has-text("Il grafo non è disponibile su questo computer")').count();
   const stessa = await pagina.evaluate(() => window.__primaApertura === true);
   const testoDopo = await pagina.locator('body').innerText();
   const erroreDopo = /Overview unavailable|Panoramica non disponibile|I cannot read the graph|Non riesco a leggere il grafo/i.test(testoDopo);

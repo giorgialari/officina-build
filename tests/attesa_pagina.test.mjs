@@ -35,3 +35,14 @@ test('il primo grafo può arrivare dopo i due minuti della prima lettura', async
   await attendiGrafoAllaPrimaLettura(pagina);
   assert.ok(attesa >= 150_000);
 });
+
+test('il collaudo accetta il ripiego previsto quando il runner Mac non ha scheda video', async () => {
+  let selettore = '';
+  const pagina = { locator: (testo) => {
+    selettore = testo;
+    return { first: () => ({ async waitFor() {} }) };
+  } };
+  await attendiGrafoAllaPrimaLettura(pagina);
+  assert.match(selettore, /cosmos-graph/);
+  assert.match(selettore, /Il grafo non è disponibile su questo computer/);
+});

@@ -23,5 +23,7 @@ export async function apriPaginaDuranteRiavvio(pagina, indirizzo) {
 
 export async function attendiGrafoAllaPrimaLettura(pagina) {
   // Sul Mac del collaudo la migrazione dalla 1.0.32 ha richiesto circa 150 secondi.
-  await pagina.locator('[data-testid="cosmos-graph"]').first().waitFor({ timeout: 240_000 });
+  // I runner Mac possono non offrire la scheda video al browser: in quel caso la pagina mostra il suo ripiego previsto.
+  await pagina.locator('[data-testid="cosmos-graph"], .graph-state:has-text("Il grafo non è disponibile su questo computer")')
+    .first().waitFor({ timeout: 240_000 });
 }
