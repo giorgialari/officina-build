@@ -562,4 +562,10 @@ def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_entrambi_g
     assert win.index('$osservaMotore = Avvia-Controllo-Motore') < win.index(r'Set-Content "$datiVecchi\aggiorna.request"')
     assert 'Wait-Job' in win and 'Receive-Job' in win
     assert 'Controlla-Motore $datiNuovi' not in win
+
+
+def test_windows_aspetta_l_eseguibile_prima_di_dichiarare_completa_l_installazione():
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert 'while (-not (Test-Path $exeNuovo)' in win
+    assert win.index('while (-not (Test-Path $exeNuovo)') < win.index("Controlla (Test-Path $exeNuovo)")
     assert "Name = 'Memdoria AI Brain.exe'" in win and '/api/setup-info' in win and '-Milliseconds 250' in win

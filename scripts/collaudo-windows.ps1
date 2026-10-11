@@ -427,7 +427,12 @@ function Scenario-Aggiornamento([string]$modo) {
     if ($separata) {
         Controlla ((Processi-Di $vecchia).Count -eq 0) 'nessun programma della versione di prima e'' rimasto acceso'
     }
-    Controlla (Test-Path "$nuova\runtime\python\Memdoria AI Brain.exe") 'la versione nuova e'' in Programs\Memdoria-AI-Brain'
+    # VERSION viene copiato prima dell'eseguibile: il nuovo numero può comparire mentre l'installer sta ancora
+    # copiando il runtime. Il monitor dell'Engine è già acceso, quindi questa attesa non nasconde il primo avvio.
+    $exeNuovo = "$nuova\runtime\python\Memdoria AI Brain.exe"
+    $fineExe = (Get-Date).AddMinutes(3)
+    while (-not (Test-Path $exeNuovo) -and (Get-Date) -lt $fineExe) { Start-Sleep -Seconds 2 }
+    Controlla (Test-Path $exeNuovo) 'la versione nuova e'' in Programs\Memdoria-AI-Brain'
     $verInstallata = [string](Get-Content "$nuova\runtime\app\VERSION" -TotalCount 1 -ErrorAction SilentlyContinue)
     Richiedi ($verInstallata.Trim() -eq $versioneNuova) "i file installati sono davvero della $versioneNuova"
 
