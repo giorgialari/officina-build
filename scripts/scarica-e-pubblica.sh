@@ -10,7 +10,8 @@ cd "$lavoro"
 gh run download "$corsa" -R giorgialari/officina-build -p 'rilascio-*'
 apri() {  # <cartella con i .enc e chiave.cms>
   local k; k=$(mktemp)
-  openssl cms -decrypt -inform DER -in "$1/chiave.cms" -inkey "$chiave_privata" -out "$k"
+  # il job Windows scrive la chiave con fine riga \r\n: il \r va tolto, se no «bad decrypt»
+  openssl cms -decrypt -inform DER -in "$1/chiave.cms" -inkey "$chiave_privata" | tr -d '\r' > "$k"
   for f in "$1"/*.enc; do openssl enc -d -aes-256-cbc -pbkdf2 -iter 10000 -pass "file:$k" -in "$f" -out "${f%.enc}"; rm -f "$f"; done
   rm -f "$k" "$1/chiave.cms"
 }
