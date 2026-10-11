@@ -92,6 +92,21 @@ def test_trova_il_commit_con_cui_e_uscita_ogni_versione(repo):
     assert uscita["corrente"] == "1.0.32"
 
 
+def test_una_versione_con_correzioni_prima_del_rilascio_usa_il_segnaposto_finale(repo):
+    cartella, _ = repo
+    (cartella / "correzione-installer.txt").write_text("installer compilabile")
+    git(cartella, "add", "-A")
+    git(cartella, "commit", "-qm", "Correzione installer prima del rilascio")
+    git(cartella, "commit", "--allow-empty", "-qm", "Versione 1.0.32")
+    rilascio = git(cartella, "rev-parse", "HEAD")
+    (cartella / "VERSION").write_text("1.0.33\n")
+    (cartella / "nuovo.txt").write_text("lavoro successivo")
+    git(cartella, "add", "-A")
+    git(cartella, "commit", "-qm", "lavoro dopo il rilascio")
+    uscita = risolvi(cartella, "main", "1.0.32")
+    assert uscita["matrice"][1] == {"nome": "1.0.32", "riferimento": rilascio}
+
+
 def test_il_collaudo_ha_installazione_pulita_a_parte_e_i_due_modi_di_windows(repo):
     cartella, _ = repo
     uscita = risolvi(cartella, "main", "1.0.25,1.0.30")

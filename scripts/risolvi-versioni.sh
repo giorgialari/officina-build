@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Da un elenco di versioni (es. "1.0.25,1.0.28,1.0.30") trova il commit con cui sono uscite (il primo in cui VERSION e' diventato
-# quel numero) e scrive per GitHub: la tabella da costruire (la nuova piu' tutte le vecchie) e l'elenco dei collaudi di aggiornamento.
+# Da un elenco di versioni trova il commit di rilascio ("Versione X.Y.Z"), dopo le correzioni fatte prima di uscire.
+# Se manca quel segno, usa il primo commit che ha introdotto VERSION. Scrive la tabella e l'elenco dei collaudi.
 #   risolvi-versioni.sh <cartella del codice (clone completo)> <riferimento nuovo> <elenco versioni separato da virgole>
 set -eu
 codice=$1; nuovo=$2; elenco=$3
@@ -19,7 +19,12 @@ for v in [x.strip() for x in elenco.split(",") if x.strip()]:
     if v in visti or v == corrente:
         continue
     visti.add(v)
-    commit = (git("log", "--format=%H", "-S" + v, "--", "VERSION").splitlines() or [""])[-1]  # il piu' vecchio: quello che l'ha introdotta
+    # La 1.0.32 ha avuto una correzione dell'installer dopo il primo cambio di VERSION: il pacchetto pubblicato
+    # corrisponde al commit di rilascio, non al primo commit in cui e' apparso il numero.
+    segnali = (line.split("\t", 1) for line in git("log", "--first-parent", "--format=%H%x09%s", nuovo).splitlines())
+    commit = next((sha for sha, titolo in segnali if titolo == f"Versione {v}" and git("show", f"{sha}:VERSION").strip() == v), "")
+    if not commit:
+        commit = (git("log", "--format=%H", "-S" + v, "--", "VERSION").splitlines() or [""])[-1]
     if not commit or git("show", f"{commit}:VERSION").strip() != v:
         print(f"::warning::Non trovo il commit della versione {v}: la salto", file=sys.stderr)
         continue
