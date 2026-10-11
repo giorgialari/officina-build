@@ -550,6 +550,19 @@ def test_il_mac_controlla_prima_riapertura_motore_e_pagina_dopo_entrambi_gli_agg
     assert 'nuova-dopo' not in mac  # il collaudo non maschera un mancato riavvio automatico
 
 
+def test_il_browser_aspetta_che_la_porta_dell_app_si_apra_prima_di_provare_il_riavvio_del_server():
+    pagina = (SCRIPT / "pagina.mjs").read_text(encoding="utf-8")
+    assert 'ERR_CONNECTION_REFUSED' in pagina
+    assert 'await pagina.goto(indirizzo' in pagina
+    assert 'await pagina.waitForTimeout(500)' in pagina
+
+
+def test_mac_chiede_il_collegamento_dei_dati_1032_solo_se_si_parte_dalla_1032():
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    assert 'if [ "$VER_V" = 1.0.32 ]; then' in mac
+    assert 'trasloco fatto: Memdoria e' in mac
+
+
 def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_entrambi_gli_aggiornamenti():
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert 'Avvia-Controllo-Motore' in win

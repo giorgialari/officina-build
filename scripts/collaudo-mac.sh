@@ -286,7 +286,9 @@ controlla_primo_avvio "$DATI_N"
 aspetta_lettura "$DATI_N"; richiedi $? "dopo l'aggiornamento la lettura finisce senza errori"
 wait "$PID_MOTORE"; controlla $? "Engine senza stato Errore durante la prima riapertura dopo $VER_V"
 [ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ] && [ -L /Applications/Memdoria-AI-Brain.app ] && [ -L /Applications/Memdoria.app ]; controlla $? "nome senza trattini nel Dock, con collegamenti per le versioni precedenti"
-[ -L "$SUPPORTO/Memdoria" ]; controlla $? "trasloco fatto: Memdoria e' un collegamento verso Memdoria-AI-Brain"
+if [ "$VER_V" = 1.0.32 ]; then
+  [ -L "$SUPPORTO/Memdoria" ]; controlla $? "trasloco fatto: Memdoria e' un collegamento verso Memdoria-AI-Brain"
+fi
 [ -L "$HOME/.config/ai-brain" ] && [ -f "$HOME/.config/memdoria-ai-brain/token" ]; controlla $? "la cartella tecnica e' stata spostata con un collegamento per la versione di prima"
 DOPO=$(conta "$DATI_N" memories); [ "${DOPO:-0}" -ge "${PRIMA:-2}" ]; controlla $? "memorie intatte: prima ${PRIMA:-?}, dopo ${DOPO:-?}"
 C=$(conta "$DATI_N" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate dopo l'aggiornamento: ${C:-0}"

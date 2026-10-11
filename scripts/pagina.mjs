@@ -33,7 +33,21 @@ if (controllo === '--server-in-riavvio') {
     panoramicaTornata = vera.ok();
     await route.fulfill({ response: vera });
   });
-  await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  // Nel primo avvio l'icona compare prima che il servizio apra la porta. Appena la pagina è disponibile,
+  // la prova resta in quella stessa finestra per vedere l'attesa e il ritorno del grafo.
+  const limiteApertura = Date.now() + 150_000;
+  for (;;) {
+    try {
+      await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+      break;
+    } catch (errore) {
+      const rete = String(errore);
+      if (!rete.includes('ERR_CONNECTION_REFUSED') && !rete.includes('ERR_CONNECTION_RESET') &&
+          !rete.includes('ERR_EMPTY_RESPONSE')) throw errore;
+      if (Date.now() >= limiteApertura) throw errore;
+      await pagina.waitForTimeout(500);
+    }
+  }
   await pagina.getByRole('status').filter({ hasText: 'Il server si sta riavviando: i dati tornano da soli.' }).waitFor({ timeout: 20_000 });
   await pagina.waitForTimeout(2500);
   const testo = await pagina.locator('body').innerText();
