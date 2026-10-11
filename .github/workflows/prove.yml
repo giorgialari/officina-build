@@ -112,6 +112,11 @@ jobs:
       run: scripts/riservato.sh grafo codice '[0-9]+ (passed|failed)|verdi|rosse' -- xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" python scripts/scala_prove.py --gradini neo4j --esiti "${{ runner.temp }}/esiti"
     - name: Dettaglio cifrato (solo se rosse)
       if: failure()
+      run: |
+        cp "${{ runner.temp }}/esiti/neo4j-grafo.log" "${{ runner.temp }}/riservato/neo4j-grafo.log" 2>/dev/null || true
+        scripts/cifra.sh
+    - name: Allegato cifrato (solo se rosse)
+      if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: registri-cifrati-grafo
