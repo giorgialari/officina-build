@@ -19,7 +19,7 @@ function Say($m) { Write-Host "`n=== $m" -ForegroundColor Cyan }
 # Un passo da cui dipende tutto il resto: se fallisce il collaudo si ferma qui.
 function Salva-Dettagli {
     New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
-    foreach ($d in "$Local\AI Brain", "$Local\Memdoria") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
+    foreach ($d in "$Local\AI Brain", "$Local\Memdoria", "$Local\Memdoria-AI-Brain") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
 }
 
 function Richiedi([bool]$ok, [string]$cosa) {
@@ -33,6 +33,7 @@ function Controlla([bool]$ok, [string]$cosa) {
 
 function Prepara-Chat {
     $casa = $env:USERPROFILE
+    New-Item -ItemType Directory -Force "$casa\.codex" | Out-Null
     $ag = "$casa\.gemini\antigravity\brain\8bd7e99a-26db\.system_generated\logs"
     New-Item -ItemType Directory -Force $ag | Out-Null
     @(
@@ -87,19 +88,20 @@ function Metti-Licenza([string]$app, [string]$dati) {
 }
 
 function Accendi([string]$app) {
-    # Si accende come la persona: con il collegamento nel menu Start che l'installer di QUELLA versione ha creato (la 1.0.25 lo
-    # lancia con il solo tray.py; da 1.0.28 con -E -s -S). Se il collegamento non c'e', si usano le opzioni di oggi.
+    # Si accende come la persona: con il collegamento nel menu Start che l'installer di QUELLA versione ha creato.
+    # Se il collegamento non c'e', si usano le opzioni di oggi.
     $argomenti = @('-E', '-s', '-S', "`"$app\runtime\app\tray.py`"")
     try {
         $shell = New-Object -ComObject WScript.Shell
         $menu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
-        foreach ($nome in 'Memdoria', 'AI Brain') {
+        foreach ($nome in 'Memdoria AI Brain', 'Memdoria', 'AI Brain') {
             if (-not (Test-Path "$menu\$nome.lnk")) { continue }
             $collegamento = $shell.CreateShortcut("$menu\$nome.lnk")
             if ($collegamento.TargetPath -like "$app\*" -and $collegamento.Arguments) { $argomenti = @($collegamento.Arguments); break }
         }
     } catch { }
-    Start-Process "$app\runtime\python\AI Brain.exe" -ArgumentList $argomenti -WorkingDirectory $app | Out-Null
+    $exe = if (Test-Path "$app\runtime\python\Memdoria AI Brain.exe") { 'Memdoria AI Brain.exe' } else { 'AI Brain.exe' }
+    Start-Process "$app\runtime\python\$exe" -ArgumentList $argomenti -WorkingDirectory $app | Out-Null
 }
 
 . "$PSScriptRoot\lettura.ps1"   # Esito-Lettura: la regola «lettura finita», provata da tests\lettura.tests.ps1
@@ -145,6 +147,31 @@ function Pagina-Nel-Browser([string]$dati, [string]$quando) {
     Controlla ($LASTEXITCODE -eq 0) "la pagina si apre nel browser e disegna il grafo ($quando): $($uscita | Select-Object -Last 1)"
 }
 
+function Prepara-Feed-Pulsante {
+    $versione = (Get-Content "$Codice\VERSION" -TotalCount 1).Trim()
+    $pezzi = $versione.Split('.')
+    $pezzi[-1] = [string]([int]$pezzi[-1] + 1)
+    $futura = $pezzi -join '.'
+    $cartella = "$env:RUNNER_TEMP\feed-pulsante"
+    New-Item -ItemType Directory -Force $cartella | Out-Null
+    $script:FeedAttivo = "$cartella\ultima-versione.json"
+    $script:FeedNuovo = "$cartella\versione-nuova.json"
+    $indirizzo = 'file:///' + ($Nuovo -replace '\\', '/')
+    & python "$PSScriptRoot\feed.py" $Codice $Chiave $script:FeedAttivo $versione windows $Nuovo $indirizzo | Out-Null
+    Richiedi ($LASTEXITCODE -eq 0) 'elenco iniziale di prova preparato'
+    & python "$PSScriptRoot\feed.py" $Codice $Chiave $script:FeedNuovo $futura windows $Nuovo $indirizzo | Out-Null
+    Richiedi ($LASTEXITCODE -eq 0) 'elenco con la versione futura preparato'
+    $env:AI_BRAIN_UPDATES_URL = 'file:///' + ($script:FeedAttivo -replace '\\', '/')
+    $env:AI_BRAIN_AGGIORNA_OGNI = '5'
+}
+
+function Controlla-Pulsante-Aggiornamento([string]$dati) {
+    $cfg = Get-Content "$dati\config.json" -Raw | ConvertFrom-Json
+    $uscita = & node "$PSScriptRoot\pagina.mjs" "http://127.0.0.1:$($cfg.brain_port)/app/" "$env:RUNNER_TEMP\pulsante-windows" `
+        --pulsante-aggiornamento $script:FeedNuovo $script:FeedAttivo 2>&1
+    Controlla ($LASTEXITCODE -eq 0) "il pulsante in alto a destra si attiva senza riavvio dopo il cambio del feed: $($uscita | Select-Object -Last 1)"
+}
+
 function Seme-Connessione([string]$dati) {
     # La persona ha risposto «si» alla domanda «Le collego a Memdoria?» (si salva in config.json, prima del primo avvio).
     New-Item -ItemType Directory -Force $dati | Out-Null
@@ -155,7 +182,8 @@ function Collega-Ai([string]$dati) {
     # L'app collega dopo la lettura: si aspetta la sua voce nei file di Claude Code (fino a 2 minuti).
     $fine = (Get-Date).AddSeconds(120)
     while ((Get-Date) -lt $fine) {
-        if ((Test-Path "$env:USERPROFILE\.claude.json") -and ((Get-Content "$env:USERPROFILE\.claude.json" -Raw) -match 'ai-brain')) { return $true }
+        $nome = if ($dati -like '*Memdoria-AI-Brain') { 'memdoria-ai-brain' } else { 'ai-brain' }
+        if ((Test-Path "$env:USERPROFILE\.claude.json") -and ((Get-Content "$env:USERPROFILE\.claude.json" -Raw) -match ('"' + $nome + '"'))) { return $true }
         Start-Sleep 5
     }
     return $false
@@ -186,7 +214,7 @@ function Disinstalla-Tutto {
             Where-Object { $_.DisplayName -match 'Memdoria|AI Brain' })) {
         Start-Process ($u.UninstallString -replace '"', '') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
     }
-    foreach ($n in 'AI Brain', 'Memdoria') {
+    foreach ($n in 'AI Brain', 'Memdoria', 'Memdoria-AI-Brain') {
         $p = "$Local\$n"
         if (Test-Path $p) { if ((Get-Item $p -Force).LinkType) { cmd /c rmdir "`"$p`"" } else { Remove-Item $p -Recurse -Force -ErrorAction SilentlyContinue } }
         Remove-Item "$Programmi\$n" -Recurse -Force -ErrorAction SilentlyContinue
@@ -199,14 +227,15 @@ Prepara-Chat
 if ($ConPulita) {
     Say 'A. Installazione pulita della versione nuova'
     Installa $Nuovo "$env:RUNNER_TEMP\installa-nuovo.log"
-    $app = Cartella-App 'Memdoria'
-    Controlla (Test-Path "$app\runtime\python\AI Brain.exe") 'l''app e'' in Programs\Memdoria'
-    $dati = "$Local\Memdoria"
+    $app = Cartella-App 'Memdoria-AI-Brain'
+    Controlla (Test-Path "$app\runtime\python\Memdoria AI Brain.exe") 'l''app e'' in Programs\Memdoria-AI-Brain'
+    $dati = "$Local\Memdoria-AI-Brain"
     Metti-Licenza $app $dati
     # Il modello di Memdoria AI (1,2 GB) arriva dalla cache della corsa, se c'e'; altrimenti lo scarica l'app e lo si tiene per la prossima.
     $cacheModello = "$env:RUNNER_TEMP\modello"
     if (Test-Path "$cacheModello\*.gguf") { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
     Seme-Connessione $dati
+    Prepara-Feed-Pulsante
     Accendi $app
     $p = Aspetta-Lettura $dati
     Richiedi ($null -ne $p -and -not $p.error) "la prima lettura finisce senza errori ($($p.error))"
@@ -216,15 +245,15 @@ if ($ConPulita) {
     $s = Statistiche $dati
     for ($k = 0; $k -lt 9 -and $s.entities -lt 1; $k++) { Start-Sleep 10; $s = Statistiche $dati }
     Controlla ($s.conversations -ge 3) "conversazioni trovate: $($s.conversations) (attese almeno 3: Antigravity, Gemini CLI, Claude Code)"
-    Controlla (-not (Test-Path "$Local\AI Brain")) 'nessuna cartella "AI Brain" in una installazione nuova'
+    Controlla (-not (Test-Path "$Local\AI Brain") -and -not (Test-Path "$Local\Memdoria")) 'nessuna cartella dati col nome di prima in una installazione nuova'
     Controlla (($s.entities -ge 1) -and ($s.memories -ge 1)) "il grafo si riempie: $($s.entities) entita, $($s.memories) memorie, $($s.relations) relazioni"
     $menu = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
-    Controlla (Test-Path "$menu\Memdoria.lnk") 'collegamento "Memdoria" nel menu Start'
+    Controlla (Test-Path "$menu\Memdoria AI Brain.lnk") 'collegamento "Memdoria AI Brain" nel menu Start'
     # Il nome segue la lingua dell'installazione: italiano o inglese.
     Controlla ((Test-Path "$menu\Ripara Memdoria.lnk") -or (Test-Path "$menu\Repair Memdoria.lnk")) 'collegamento "Ripara Memdoria" (o "Repair Memdoria") nel menu Start'
     $fineAvvio = (Get-Date).AddSeconds(90)
     while (-not ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria') -and (Get-Date) -lt $fineAvvio) { Start-Sleep 5 }
-    Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria') 'avvio automatico verso la cartella nuova'
+    Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria-AI-Brain') 'avvio automatico verso la cartella nuova'
     # Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti, la macchina e'' lenta)
     $fineModello = (Get-Date).AddMinutes(20); $modello = $false
     while ((Get-Date) -lt $fineModello -and -not $modello) {
@@ -246,25 +275,27 @@ if ($ConPulita) {
     Controlla (Collega-Ai $dati) 'collega le AI: la voce di Memdoria compare nei file di Claude Code'
     Controlla (Lingua-Si-Cambia $dati) 'il cambio lingua (inglese e di nuovo italiano) si salva'
     Pagina-Nel-Browser $dati 'installazione pulita'
+    Controlla-Pulsante-Aggiornamento $dati
     if ((Test-Path "$dati\modello-locale\*.gguf.ok") -and -not (Test-Path "$cacheModello\*.gguf")) {
         New-Item -ItemType Directory -Force $cacheModello | Out-Null
         Copy-Item "$dati\modello-locale\*.gguf*" $cacheModello -Force
         Write-Host "       modello salvato per la prossima volta"
     }
     Disinstalla-Tutto
-    Controlla (-not (Test-Path "$Programmi\Memdoria")) 'dopo la disinstallazione la cartella del programma non c e piu'
+    Controlla (-not (Test-Path "$Programmi\Memdoria-AI-Brain")) 'dopo la disinstallazione la cartella del programma non c e piu'
     Controlla (@(Get-Process | Where-Object { $_.Path -like "$Programmi\*" }).Count -eq 0) 'dopo la disinstallazione nessun programma e acceso'
-    Controlla (-not (Test-Path "$menu\Memdoria.lnk")) 'dopo la disinstallazione il collegamento nel menu Start e sparito'
+    Controlla (-not (Test-Path "$menu\Memdoria AI Brain.lnk")) 'dopo la disinstallazione il collegamento nel menu Start e sparito'
+    Remove-Item Env:\AI_BRAIN_UPDATES_URL, Env:\AI_BRAIN_AGGIORNA_OGNI -ErrorAction SilentlyContinue
 
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
 function Scenario-Aggiornamento([string]$modo) {
-    # Fino alla 1.0.30 programma e dati si chiamano «AI Brain» (al primo avvio nuovo i dati si traslocano in «Memdoria»);
-    # dalla 1.0.31 sono gia' «Memdoria»: niente trasloco e niente cartella vecchia da controllare.
+    # Per la 1.0.33 si collauda solo la 1.0.32: programma e dati di partenza si chiamano «Memdoria».
     $verVecchia = [regex]::Match((Split-Path $Vecchio -Leaf), 'AI-Brain-([0-9.]+)-').Groups[1].Value
-    $separata = ([version]$verVecchia) -lt ([version]'1.0.31')
-    $nomeVecchio = if ($separata) { 'AI Brain' } else { 'Memdoria' }
+    Richiedi ($verVecchia -eq '1.0.32') "la versione di partenza e' la 1.0.32 (trovata $verVecchia)"
+    $separata = $true
+    $nomeVecchio = 'Memdoria'
     Say "B. Aggiornamento dalla $verVecchia, accesa ($modo)"
     Disinstalla-Tutto
     Installa $Vecchio "$env:RUNNER_TEMP\installa-vecchio-$modo.log"
@@ -295,7 +326,7 @@ function Scenario-Aggiornamento([string]$modo) {
     Controlla ((Processi-Di $vecchia).Count -gt 0) 'la versione di prima e'' accesa quando parte l''aggiornamento'
     Start-Sleep 5
 
-    $nuova = Cartella-App 'Memdoria'
+    $nuova = Cartella-App 'Memdoria-AI-Brain'
     if ($modo -eq 'installer') {
         Installa $Nuovo "$env:RUNNER_TEMP\installa-sopra.log"
     } else {
@@ -347,11 +378,11 @@ function Scenario-Aggiornamento([string]$modo) {
     if ($separata) {
         Controlla ((Processi-Di $vecchia).Count -eq 0) 'nessun programma della versione di prima e'' rimasto acceso'
     }
-    Controlla (Test-Path "$nuova\runtime\python\AI Brain.exe") 'la versione nuova e'' in Programs\Memdoria'
+    Controlla (Test-Path "$nuova\runtime\python\Memdoria AI Brain.exe") 'la versione nuova e'' in Programs\Memdoria-AI-Brain'
 
     # Se l'aggiornamento non l'ha riaccesa (sessione senza schermo vero), la si accende come farebbe la persona.
     if ((Processi-Di $nuova).Count -eq 0 -and (Test-Path $nuova)) { Accendi $nuova }
-    $datiNuovi = "$Local\Memdoria"
+    $datiNuovi = "$Local\Memdoria-AI-Brain"
     $p = Aspetta-Lettura $datiNuovi
     Richiedi ($null -ne $p -and -not $p.error) "dopo l'aggiornamento la lettura finisce senza errori ($($p.error))"
     if ($separata) {
@@ -374,7 +405,7 @@ function Scenario-Aggiornamento([string]$modo) {
                 try {
                     $strumento = "$env:RUNNER_TEMP\handle64.exe"
                     if (-not (Test-Path $strumento)) { Invoke-WebRequest 'https://live.sysinternals.com/handle64.exe' -OutFile $strumento -UseBasicParsing -TimeoutSec 60 }
-                    $righe = & $strumento -accepteula -nobanner "Programs\AI Brain" 2>&1 | Where-Object { $_ -match '\S' } | Select-Object -First 12
+                    $righe = & $strumento -accepteula -nobanner "Programs\Memdoria" 2>&1 | Where-Object { $_ -match '\S' } | Select-Object -First 12
                     foreach ($riga in $righe) {
                         Write-Host "       NOTA handle: $(([string]$riga).Trim())"
                         if (([string]$riga) -match 'pid:\s*(\d+)') {
@@ -388,21 +419,25 @@ function Scenario-Aggiornamento([string]$modo) {
                 Write-Host "       NOTA: la cartella e' occupata ($(([string]$_.Exception.Message).Substring(0, [Math]::Min(230, ([string]$_.Exception.Message).Length)))); programmi della cartella vecchia: $chi"
             }
         }
-        Controlla (-not $esiste) "la cartella Programs\AI Brain e' stata tolta (rimasto: $rimasto)"
+        Controlla (-not $esiste) "la cartella Programs\Memdoria e' stata tolta (rimasto: $rimasto)"
     }
     if ($separata) {
-        $link = Get-Item "$Local\AI Brain" -Force -ErrorAction SilentlyContinue
-        Controlla ($null -ne $link -and $link.LinkType -eq 'Junction') 'trasloco fatto: "AI Brain" e'' un collegamento verso "Memdoria"'
+        $link = Get-Item "$Local\Memdoria" -Force -ErrorAction SilentlyContinue
+        Controlla ($null -ne $link -and $link.LinkType -eq 'Junction') 'trasloco fatto: "Memdoria" e'' un collegamento verso "Memdoria-AI-Brain"'
     } else { Write-Host "       la $verVecchia ha gia' i dati in Memdoria: niente trasloco da controllare" }
-    Controlla (Test-Path "$datiNuovi\config.json") 'i dati stanno in Memdoria'
+    Controlla (Test-Path "$datiNuovi\config.json") 'i dati stanno in Memdoria-AI-Brain'
+    $cartellaTecnica = Get-Item "$env:USERPROFILE\.config\ai-brain" -Force -ErrorAction SilentlyContinue
+    Controlla ($null -ne $cartellaTecnica -and $cartellaTecnica.LinkType -eq 'Junction' -and (Test-Path "$env:USERPROFILE\.config\memdoria-ai-brain\token")) 'la cartella tecnica e'' stata spostata con un collegamento per la versione di prima'
     $dopo = Statistiche $datiNuovi
     Controlla ($dopo.memories -ge $prima.memories) "memorie intatte: prima $($prima.memories), dopo $($dopo.memories)"
     Controlla ($dopo.conversations -ge 3) "conversazioni trovate dopo l'aggiornamento: $($dopo.conversations)"
     if ($separata) { Controlla ((Processi-Di $vecchia).Count -eq 0) 'ancora nessuna versione di prima accesa' }
-    Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -notmatch 'Programs\\AI Brain') 'l''avvio automatico non punta piu'' alla cartella vecchia'
+    Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria-AI-Brain') 'l''avvio automatico punta alla cartella nuova'
     if ($haVoci) {
         $voci = Get-Content "$env:USERPROFILE\.claude.json" -Raw
-        Controlla (($voci -match 'ai-brain') -and ($voci -notmatch 'Local[\\/]+AI Brain')) 'le voci delle AI sono rimaste e non puntano piu'' alla cartella vecchia'
+        Controlla (($voci -match '"memdoria-ai-brain"') -and ($voci -notmatch '"ai-brain"') -and ($voci -notmatch 'Local[\\/]+Memdoria"')) 'le voci delle AI usano il nome nuovo e non puntano piu'' alla cartella vecchia'
+        $codex = Get-Content "$env:USERPROFILE\.codex\config.toml" -Raw -ErrorAction SilentlyContinue
+        Controlla (($codex -match 'mcp_servers\.memdoria-ai-brain') -and ($codex -notmatch 'mcp_servers\.ai-brain')) 'anche Codex usa la voce nuova'
     }
     Controlla (Lingua-Si-Cambia $datiNuovi) 'dopo l''aggiornamento il cambio lingua funziona'
     Pagina-Nel-Browser $datiNuovi "dopo l'aggiornamento ($modo)"
@@ -418,7 +453,7 @@ if ($Fallimenti.Count -gt 0) {
     Write-Host "`nCOLLAUDO FALLITO ($($Fallimenti.Count)):" -ForegroundColor Red
     $Fallimenti | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
     New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
-    foreach ($d in $script:UltimiDati + "$Local\Memdoria") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
+    foreach ($d in $script:UltimiDati + "$Local\Memdoria-AI-Brain") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
     exit 1
 }
 Write-Host "`nCOLLAUDO RIUSCITO" -ForegroundColor Green

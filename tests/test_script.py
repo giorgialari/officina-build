@@ -224,16 +224,16 @@ def test_il_seme_della_connessione_mette_si_e_non_sovrascrive_una_scelta(tmp_pat
 
 def test_mac_il_seme_viene_prima_dell_avvio_dell_app():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
-    for avvio in ('accendi /Applications/Memdoria.app/Contents/MacOS/Memdoria nuova', 'accendi "$APP_V/Contents/MacOS/$NOME_V" vecchia'):
+    for avvio in ('accendi /Applications/Memdoria-AI-Brain.app/Contents/MacOS/Memdoria nuova', 'accendi "$APP_V/Contents/MacOS/$NOME_V" vecchia'):
         assert avvio in mac
-        assert mac.index("seme_connessione", mac.index(avvio) - 120) < mac.index(avvio)
+        assert mac.rfind("seme_connessione", 0, mac.index(avvio)) < mac.index(avvio)
     assert "connetti.request" not in mac, "la richiesta cancella la risposta e rimostra la domanda: senza schermo non ha risposta"
 
 
 def test_windows_il_seme_viene_prima_dell_avvio_e_non_si_manda_la_richiesta():
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert win.count("Seme-Connessione") >= 3
-    assert win.index("Seme-Connessione $dati\n    Accendi $app") > 0
+    assert win.index("Seme-Connessione $dati\n    Prepara-Feed-Pulsante\n    Accendi $app") > 0
     assert "Seme-Connessione $datiVecchi\n    Accendi $vecchia" in win
     assert "connetti.request" not in win
 
@@ -314,7 +314,7 @@ def test_collaudi_di_installazione_pulita_mettono_un_cliente_nel_grafo_loro_stes
     import pathlib
     r = pathlib.Path(__file__).resolve().parent.parent / "scripts"
     win = (r / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert win.index("Seme-Connessione $dati\n    Accendi $app") < win.index("Salva-Memoria $dati 'Il cliente Verdi Srl") < win.index("il grafo si riempie")
+    assert win.index("Seme-Connessione $dati\n    Prepara-Feed-Pulsante\n    Accendi $app") < win.index("Salva-Memoria $dati 'Il cliente Verdi Srl") < win.index("il grafo si riempie")
     mac = (r / "collaudo-mac.sh").read_text(encoding="utf-8")
     inizio = mac.index("A. Installazione pulita")
     assert mac.index("Verdi Srl", inizio) < mac.index("il grafo si riempie", inizio)
@@ -467,3 +467,37 @@ def test_windows_stampa_cosa_dicono_i_registri_della_versione_di_prima_sugli_agg
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "NOTA log:" in s and "nessuna riga sugli aggiornamenti" in s
     assert s.index("NOTA log:") < s.index("NOTA: aggiornamento dall'app fermo.")
+def test_collaudo_aggiorna_solo_dalla_1032():
+    import json
+
+    versioni = json.loads((Path(__file__).resolve().parents[1] / "versioni-in-uso.json").read_text())
+    assert versioni == ["1.0.32"]
+
+
+def test_il_collaudo_controlla_il_pulsante_sulla_pagina_rimasta_aperta():
+    pagina = (SCRIPT / "pagina.mjs").read_text(encoding="utf-8")
+    assert "nav.view-tabs button.update-pill" in pagina
+    assert pagina.index("tasto.count() !== 0") < pagina.index("copyFile(feedNuovo, feedAttivo)")
+    assert pagina.index("copyFile(feedNuovo, feedAttivo)") < pagina.index("tasto.waitFor({ state: 'visible'")
+    assert "tasto.isEnabled()" in pagina and "navigazioni !== 0" in pagina
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    for script in (mac, win):
+        assert "--pulsante-aggiornamento" in script and "AI_BRAIN_AGGIORNA_OGNI" in script
+        assert "feed.py" in script
+
+
+def test_il_collaudo_della_migrazione_parte_dalla_1032_e_controlla_le_due_cartelle_e_le_ai():
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert '[ "$VER_V" = 1.0.32 ]' in mac and "$SUPPORTO/Memdoria" in mac
+    assert "$HOME/.config/memdoria-ai-brain/token" in mac and "mcp_servers.memdoria-ai-brain" in mac
+    assert "$verVecchia -eq '1.0.32'" in win and '$Local\\Memdoria"' in win
+    assert 'memdoria-ai-brain\\token' in win and 'mcp_servers\\.memdoria-ai-brain' in win
+
+
+def test_il_mac_riconosce_l_aggiornamento_sul_percorso_esistente_e_rifiuta_due_app():
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    assert 'for candidata in /Applications/Memdoria.app /Applications/Memdoria-AI-Brain.app' in mac
+    assert 'APP_N="$candidata"' in mac and 'accendi "$APP_N/Contents/MacOS/Memdoria"' in mac
+    assert '[ "$NUM_APPS" = 1 ]' in mac
