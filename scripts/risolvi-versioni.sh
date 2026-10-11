@@ -24,7 +24,10 @@ for v in [x.strip() for x in elenco.split(",") if x.strip()]:
     segnali = (line.split("\t", 1) for line in git("log", "--first-parent", "--format=%H%x09%s", nuovo).splitlines())
     commit = next((sha for sha, titolo in segnali if titolo == f"Versione {v}" and git("show", f"{sha}:VERSION").strip() == v), "")
     if not commit:
-        commit = (git("log", "--format=%H", "-S" + v, "--", "VERSION").splitlines() or [""])[-1]
+        # Senza un commit «Versione X», il pacchetto pubblicato e' l'ULTIMO commit ancora alla versione X.
+        # -S VERSION trova il primo cambio del numero e perderebbe tutte le correzioni fatte prima di pubblicare.
+        commit = next((sha for sha in git("log", "--first-parent", "--format=%H", nuovo).splitlines()
+                       if git("show", f"{sha}:VERSION").strip() == v), "")
     if not commit or git("show", f"{commit}:VERSION").strip() != v:
         print(f"::warning::Non trovo il commit della versione {v}: la salto", file=sys.stderr)
         continue

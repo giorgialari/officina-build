@@ -107,6 +107,22 @@ def test_una_versione_con_correzioni_prima_del_rilascio_usa_il_segnaposto_finale
     assert uscita["matrice"][1] == {"nome": "1.0.32", "riferimento": rilascio}
 
 
+def test_versione_senza_segnaposto_usa_ultimo_commit_prima_della_successiva(repo):
+    cartella, _ = repo
+    (cartella / "VERSION").write_text("1.0.33\n")
+    git(cartella, "add", "VERSION")
+    git(cartella, "commit", "-qm", "Inizio lavoro 1.0.33")
+    (cartella / "correzione.txt").write_text("la versione effettivamente distribuita")
+    git(cartella, "add", "-A")
+    git(cartella, "commit", "-qm", "Correzione finale 1.0.33")
+    rilascio = git(cartella, "rev-parse", "HEAD")
+    (cartella / "VERSION").write_text("1.0.34\n")
+    git(cartella, "add", "VERSION")
+    git(cartella, "commit", "-qm", "Inizio lavoro 1.0.34")
+    uscita = risolvi(cartella, "main", "1.0.33")
+    assert uscita["matrice"][1] == {"nome": "1.0.33", "riferimento": rilascio}
+
+
 def test_il_collaudo_ha_installazione_pulita_a_parte_e_i_due_modi_di_windows(repo):
     cartella, _ = repo
     uscita = risolvi(cartella, "main", "1.0.25,1.0.30")
@@ -239,7 +255,7 @@ def test_il_seme_della_connessione_mette_si_e_non_sovrascrive_una_scelta(tmp_pat
 
 def test_mac_il_seme_viene_prima_dell_avvio_dell_app():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
-    for avvio in ('accendi /Applications/Memdoria-AI-Brain.app/Contents/MacOS/Memdoria nuova', 'accendi "$APP_V/Contents/MacOS/$NOME_V" vecchia'):
+    for avvio in ('accendi "/Applications/Memdoria AI Brain.app/Contents/MacOS/Memdoria" nuova', 'accendi "$APP_V/Contents/MacOS/Memdoria" vecchia'):
         assert avvio in mac
         assert mac.rfind("seme_connessione", 0, mac.index(avvio)) < mac.index(avvio)
     assert "connetti.request" not in mac, "la richiesta cancella la risposta e rimostra la domanda: senza schermo non ha risposta"
@@ -474,7 +490,7 @@ def test_windows_riavvia_la_versione_di_prima_se_l_aggiornamento_dall_app_non_pa
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "$riavvii -lt 2" in s and "$ultimoRiavvio.AddMinutes(3)" in s and "riavvio la versione di prima" in s
     assert "$fine = (Get-Date).AddMinutes(9)" in s  # il tempo massimo e' stretto: 15 minuti erano attesa sprecata
-    assert "(Processi-Di $nuova).Count -eq 0 -and (Test-Path $nuova)" in s  # niente accensione di una cartella che non c'e'
+    assert s.index('Richiedi ($verInstallata.Trim() -eq $versioneNuova)') < s.index('Accendi $nuova')
 
 
 def test_windows_stampa_cosa_dicono_i_registri_della_versione_di_prima_sugli_aggiornamenti():
@@ -482,11 +498,11 @@ def test_windows_stampa_cosa_dicono_i_registri_della_versione_di_prima_sugli_agg
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "NOTA log:" in s and "nessuna riga sugli aggiornamenti" in s
     assert s.index("NOTA log:") < s.index("NOTA: aggiornamento dall'app fermo.")
-def test_collaudo_aggiorna_solo_dalla_1032():
+def test_collaudo_aggiorna_dalla_1032_e_dalla_1033():
     import json
 
     versioni = json.loads((Path(__file__).resolve().parents[1] / "versioni-in-uso.json").read_text())
-    assert versioni == ["1.0.32"]
+    assert versioni == ["1.0.32", "1.0.33"]
 
 
 def test_il_collaudo_controlla_il_pulsante_sulla_pagina_rimasta_aperta():
@@ -502,17 +518,48 @@ def test_il_collaudo_controlla_il_pulsante_sulla_pagina_rimasta_aperta():
         assert "feed.py" in script
 
 
-def test_il_collaudo_della_migrazione_parte_dalla_1032_e_controlla_le_due_cartelle_e_le_ai():
+def test_il_collaudo_della_migrazione_distingue_1032_e_1033():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert '[ "$VER_V" = 1.0.32 ]' in mac and "$SUPPORTO/Memdoria" in mac
+    assert '1.0.32|1.0.33' in mac and '$SUPPORTO/Memdoria' in mac
+    assert 'NOME_V="Memdoria-AI-Brain"' in mac
     assert "$HOME/.config/memdoria-ai-brain/token" in mac and "mcp_servers.memdoria-ai-brain" in mac
-    assert "$verVecchia -eq '1.0.32'" in win and '$Local\\Memdoria"' in win
+    assert "@('1.0.32', '1.0.33')" in win and '$Local\\Memdoria"' in win
+    assert "$nomeVecchio = if ($separata) { 'Memdoria' } else { 'Memdoria-AI-Brain' }" in win
     assert 'memdoria-ai-brain\\token' in win and 'mcp_servers\\.memdoria-ai-brain' in win
 
 
 def test_il_mac_riconosce_l_aggiornamento_sul_percorso_esistente_e_rifiuta_due_app():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
-    assert 'for candidata in /Applications/Memdoria.app /Applications/Memdoria-AI-Brain.app' in mac
-    assert 'APP_N="$candidata"' in mac and 'accendi "$APP_N/Contents/MacOS/Memdoria"' in mac
+    assert '/Applications/Memdoria AI Brain.app' in mac
+    assert 'for candidata in "/Applications/Memdoria AI Brain.app" /Applications/Memdoria.app /Applications/Memdoria-AI-Brain.app' in mac
+    assert 'APP_N="$candidata"' in mac and 'controlla_nome_dock; richiedi $?' in mac
     assert '[ "$NUM_APPS" = 1 ]' in mac
+    assert 'lsappinfo list' in mac and 'bundleID=\\"it.aibrain.app\\"' in mac
+    assert 'bundle path=\\"/Applications/Memdoria AI Brain.app\\"' in mac
+
+
+def test_il_mac_controlla_prima_riapertura_motore_e_pagina_dopo_entrambi_gli_aggiornamenti():
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    pagina = (SCRIPT / "pagina.mjs").read_text(encoding="utf-8")
+    assert 'controlla_primo_avvio' in mac
+    assert 'controlla_motore' in mac
+    assert '--server-in-riavvio' in mac and '--server-in-riavvio' in pagina
+    assert 'Overview unavailable' in pagina and 'I cannot read the graph' in pagina
+    assert 'controlla_nome_dock; richiedi $?' in mac
+    assert 'nuova-dopo' not in mac  # il collaudo non maschera un mancato riavvio automatico
+
+
+def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_entrambi_gli_aggiornamenti():
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert 'Avvia-Controllo-Motore' in win
+    assert '--server-in-riavvio' in win
+    assert "@('1.0.32', '1.0.33')" in win
+    assert '$pidVecchi' in win and '$nuovoTray' in win
+    assert 'VERSION' in win and '$versioneNuova' in win
+    assert '$osservaMotore = Avvia-Controllo-Motore' in win
+    assert win.index('$osservaMotore = Avvia-Controllo-Motore') < win.index(r'Installa $Nuovo "$env:RUNNER_TEMP\installa-sopra.log"')
+    assert win.index('$osservaMotore = Avvia-Controllo-Motore') < win.index(r'Set-Content "$datiVecchi\aggiorna.request"')
+    assert 'Wait-Job' in win and 'Receive-Job' in win
+    assert 'Controlla-Motore $datiNuovi' not in win
+    assert "Name = 'Memdoria AI Brain.exe'" in win and '/api/setup-info' in win and '-Milliseconds 250' in win

@@ -9,6 +9,54 @@ const errori = [];
 const browser = await chromium.launch();
 const pagina = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 pagina.on('pageerror', (e) => errori.push(String(e).slice(0, 120)));
+if (controllo === '--server-in-riavvio') {
+  // Si usa il pacchetto realmente installato, mentre il browser simula il server che tarda a tornare.
+  // La stessa finestra deve mostrare l'attesa, poi i dati, senza una seconda apertura.
+  let lento = true;
+  let panoramicaTornata = false;
+  await pagina.route('**/api/setup-info', async (route) => {
+    const vera = await route.fetch();
+    await route.fulfill({ response: vera, json: { ...await vera.json(), mode: 'app', brain: 'server',
+      ai_connected: ['prova'], memories: 12, progress: { done: true, events: [] } } });
+  });
+  await pagina.route('**/api/locale/server', (route) => route.fulfill({ json: lento
+    ? { risponde: false, motivo: 'riavvio', pagina: true, messaggio: 'Il server si sta riavviando: i dati tornano da soli.' }
+    : { risponde: true, pagina: true } }));
+  const nonDisponibile = (route) => lento
+    ? route.fulfill({ status: 502, contentType: 'application/json', body: '{"detail":"Server in riavvio"}' })
+    : route.fallback();
+  await pagina.route('**/api/dashboard', nonDisponibile);
+  await pagina.route('**/api/graph/**', nonDisponibile);
+  await pagina.route('**/api/graph/overview*', async (route) => {
+    if (lento) return nonDisponibile(route);
+    const vera = await route.fetch();
+    panoramicaTornata = vera.ok();
+    await route.fulfill({ response: vera });
+  });
+  await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  await pagina.getByRole('status').filter({ hasText: 'Il server si sta riavviando: i dati tornano da soli.' }).waitFor({ timeout: 20_000 });
+  await pagina.waitForTimeout(2500);
+  const testo = await pagina.locator('body').innerText();
+  if (/Overview unavailable|Panoramica non disponibile|I cannot read the graph|Non riesco a leggere il grafo/i.test(testo)) {
+    throw new Error('la prima finestra mostra errori del grafo mentre il server riparte');
+  }
+  await pagina.screenshot({ path: `${prefisso}-attesa.png`, fullPage: true });
+  await pagina.evaluate(() => { window.__primaApertura = true; });
+  lento = false;
+  await pagina.locator('[data-testid="cosmos-graph"]').first().waitFor({ timeout: 30_000 });
+  for (let i = 0; i < 60 && !panoramicaTornata; i++) await pagina.waitForTimeout(500);
+  const grafo = await pagina.locator('[data-testid="cosmos-graph"]').count();
+  const stessa = await pagina.evaluate(() => window.__primaApertura === true);
+  const testoDopo = await pagina.locator('body').innerText();
+  const erroreDopo = /Overview unavailable|Panoramica non disponibile|I cannot read the graph|Non riesco a leggere il grafo/i.test(testoDopo);
+  if (!grafo || !panoramicaTornata || !stessa || erroreDopo || errori.length) {
+    throw new Error(`la pagina non torna al grafo nella stessa apertura: ${grafo} grafi, risposta ${panoramicaTornata}, errori ${errori.length}, testo ${erroreDopo}`);
+  }
+  await pagina.screenshot({ path: `${prefisso}-ritorno.png`, fullPage: true });
+  await browser.close();
+  console.log('ok: attesa pulita, grafo tornato nella stessa finestra');
+  process.exit(0);
+}
 const risposta = await pagina.goto(indirizzo, { waitUntil: 'domcontentloaded', timeout: 90_000 });
 // La pagina tiene sempre una richiesta aperta (aggiornamenti dal vivo): non esiste «rete ferma». Si aspetta il disegno.
 await pagina.waitForSelector('canvas, svg', { timeout: 60_000 }).catch(() => {});

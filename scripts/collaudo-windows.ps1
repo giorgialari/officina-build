@@ -147,6 +147,53 @@ function Pagina-Nel-Browser([string]$dati, [string]$quando) {
     Controlla ($LASTEXITCODE -eq 0) "la pagina si apre nel browser e disegna il grafo ($quando): $($uscita | Select-Object -Last 1)"
 }
 
+function Pagina-Primo-Avvio([string]$dati, [string]$versione, [string]$modo) {
+    $fine = (Get-Date).AddSeconds(60)
+    while (-not (Test-Path "$dati\config.json") -and (Get-Date) -lt $fine) { Start-Sleep -Milliseconds 500 }
+    if (-not (Test-Path "$dati\config.json")) { Controlla $false "prima riapertura dopo $versione ($modo): configurazione non pronta"; return }
+    $cfg = Get-Content "$dati\config.json" -Raw | ConvertFrom-Json
+    $uscita = & node "$PSScriptRoot\pagina.mjs" "http://127.0.0.1:$($cfg.brain_port)/app/" `
+        "$env:RUNNER_TEMP\primo-avvio-windows-$versione-$modo" --server-in-riavvio 2>&1
+    Controlla ($LASTEXITCODE -eq 0) "prima riapertura dopo $versione ($modo): attesa pulita e ritorno del grafo senza riavviare: $($uscita | Select-Object -Last 1)"
+}
+
+function Avvia-Controllo-Motore([string]$app, [string]$dati, [object[]]$pidVecchi, [string]$versioneNuova) {
+    # Il lavoro in parallelo parte PRIMA dell'installer. Cerca il primo tray nuovo (non quello della vecchia versione),
+    # aspetta che /api/setup-info dica la versione nuova e osserva subito l'Engine ogni 250 ms per 40 secondi.
+    # Così il tempo impiegato dal collaudo per attendere i file o il processo non può nascondere un errore temporaneo.
+    $pidPrima = $pidVecchi -join ','
+    Start-Job -ArgumentList $app, $dati, $pidPrima, $versioneNuova -ScriptBlock {
+        param($app, $dati, $pidPrima, $versioneNuova)
+        $precedenti = @($pidPrima.Split(',') | Where-Object { $_ } | ForEach-Object { [int]$_ })
+        $fine = (Get-Date).AddMinutes(12)
+        $porta = $null
+        while ((Get-Date) -lt $fine) {
+            $trayNuovo = @(Get-CimInstance Win32_Process -Filter "Name = 'Memdoria AI Brain.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.ExecutablePath -like "$app\*" -and $_.CommandLine -match 'tray\.py' -and $_.ProcessId -notin $precedenti })
+            if ($trayNuovo.Count -gt 0) {
+                try {
+                    $cfg = Get-Content "$dati\config.json" -Raw -ErrorAction Stop | ConvertFrom-Json
+                    $porta = $cfg.brain_port
+                    $info = Invoke-RestMethod -Uri "http://127.0.0.1:$porta/api/setup-info" -TimeoutSec 1 -ErrorAction Stop
+                    if ($info.version -eq $versioneNuova) { break }
+                } catch { }
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        if (-not $porta -or (Get-Date) -ge $fine) { return [pscustomobject]@{ visto = $false; errore = $false; motivo = 'nuova versione non osservata' } }
+        $visto = $false
+        for ($i = 0; $i -lt 160; $i++) {
+            try {
+                $stato = Invoke-RestMethod -Uri "http://127.0.0.1:$porta/api/modello-locale/stato" -TimeoutSec 1 -ErrorAction Stop
+                if ($stato.stato -eq 'errore') { return [pscustomobject]@{ visto = $true; errore = $true; motivo = 'Engine in errore alla prima riapertura' } }
+                if ($stato.stato) { $visto = $true }
+            } catch { }
+            Start-Sleep -Milliseconds 250
+        }
+        return [pscustomobject]@{ visto = $visto; errore = $false; motivo = 'osservazione terminata' }
+    }
+}
+
 function Prepara-Feed-Pulsante {
     $versione = (Get-Content "$Codice\VERSION" -TotalCount 1).Trim()
     $pezzi = $versione.Split('.')
@@ -291,16 +338,17 @@ if ($ConPulita) {
 
 # ---------------------------------------------------------------------------------------------------------------------
 function Scenario-Aggiornamento([string]$modo) {
-    # Per la 1.0.33 si collauda solo la 1.0.32: programma e dati di partenza si chiamano «Memdoria».
+    # Entrambe le versioni distribuite: la 1.0.32 si chiama Memdoria, la 1.0.33 Memdoria-AI-Brain.
     $verVecchia = [regex]::Match((Split-Path $Vecchio -Leaf), 'AI-Brain-([0-9.]+)-').Groups[1].Value
-    Richiedi ($verVecchia -eq '1.0.32') "la versione di partenza e' la 1.0.32 (trovata $verVecchia)"
-    $separata = $true
-    $nomeVecchio = 'Memdoria'
+    Richiedi ($verVecchia -in @('1.0.32', '1.0.33')) "la versione di partenza e' la 1.0.32 o 1.0.33 (trovata $verVecchia)"
+    $separata = $verVecchia -eq '1.0.32'
+    $nomeVecchio = if ($separata) { 'Memdoria' } else { 'Memdoria-AI-Brain' }
     Say "B. Aggiornamento dalla $verVecchia, accesa ($modo)"
     Disinstalla-Tutto
     Installa $Vecchio "$env:RUNNER_TEMP\installa-vecchio-$modo.log"
     $vecchia = Cartella-App $nomeVecchio
-    Controlla (Test-Path "$vecchia\runtime\python\AI Brain.exe") "la versione $verVecchia e'' in Programs\$nomeVecchio"
+    $exeVecchio = if ($separata) { 'AI Brain.exe' } else { 'Memdoria AI Brain.exe' }
+    Controlla (Test-Path "$vecchia\runtime\python\$exeVecchio") "la versione $verVecchia e'' in Programs\$nomeVecchio"
     $datiVecchi = "$Local\$nomeVecchio"
     if ($modo -eq 'app') {
         # La versione di prima guarda l'elenco delle versioni in questo file, firmato con la chiave di prova.
@@ -324,15 +372,17 @@ function Scenario-Aggiornamento([string]$modo) {
     $haVoci = Collega-Ai $datiVecchi
     if ($haVoci) { Controlla $true "la versione $verVecchia ha collegato le AI" } else { Write-Host "       la versione $verVecchia non ha collegato le AI da sola (probabile conferma a schermo): salto i controlli sulle voci dopo l'aggiornamento" }
     Controlla ((Processi-Di $vecchia).Count -gt 0) 'la versione di prima e'' accesa quando parte l''aggiornamento'
+    $pidVecchi = @((Processi-Di $vecchia | Where-Object { $_.CommandLine -match 'tray\.py' }).ProcessId)
     Start-Sleep 5
 
     $nuova = Cartella-App 'Memdoria-AI-Brain'
+    $versioneNuova = (Get-Content "$Codice\VERSION" -TotalCount 1).Trim()
+    $osservaMotore = Avvia-Controllo-Motore $nuova "$Local\Memdoria-AI-Brain" $pidVecchi $versioneNuova
     if ($modo -eq 'installer') {
         Installa $Nuovo "$env:RUNNER_TEMP\installa-sopra.log"
     } else {
         Set-Content "$datiVecchi\aggiorna.request" 'aggiorna'
         $fine = (Get-Date).AddMinutes(9)  # di solito l'aggiornamento finisce in 2-3 minuti; piu' di 9 vuol dire che non e' partito
-        $versioneNuova = (Get-Content "$Codice\VERSION" -TotalCount 1).Trim()
         function Versione-Installata { try { (Get-Content "$nuova\runtime\app\VERSION" -TotalCount 1 -ErrorAction Stop).Trim() } catch { '' } }
         $ultimaRichiesta = Get-Date; $ultimoRiavvio = Get-Date; $riavvii = 0
         while ((Get-Date) -lt $fine -and (Versione-Installata) -ne $versioneNuova) {
@@ -371,18 +421,38 @@ function Scenario-Aggiornamento([string]$modo) {
             Write-Host "       NOTA: aggiornamento dall'app fermo. scaricati: [$scaricati]; installer accesi: [$installer]; programmi della versione di prima accesi: $accesi; file dei dati: [$dati]"
         }
         Controlla ((Versione-Installata) -eq $versioneNuova) 'l''app ha scaricato e installato la versione nuova da sola'
-        Start-Sleep 30
         Remove-Item Env:\AI_BRAIN_UPDATES_URL -ErrorAction SilentlyContinue
     }
-    Start-Sleep 10
+    Start-Sleep 3
     if ($separata) {
         Controlla ((Processi-Di $vecchia).Count -eq 0) 'nessun programma della versione di prima e'' rimasto acceso'
     }
     Controlla (Test-Path "$nuova\runtime\python\Memdoria AI Brain.exe") 'la versione nuova e'' in Programs\Memdoria-AI-Brain'
+    $verInstallata = [string](Get-Content "$nuova\runtime\app\VERSION" -TotalCount 1 -ErrorAction SilentlyContinue)
+    Richiedi ($verInstallata.Trim() -eq $versioneNuova) "i file installati sono davvero della $versioneNuova"
 
-    # Se l'aggiornamento non l'ha riaccesa (sessione senza schermo vero), la si accende come farebbe la persona.
-    if ((Processi-Di $nuova).Count -eq 0 -and (Test-Path $nuova)) { Accendi $nuova }
+    # La versione nuova deve avere un processo tray diverso da quello della versione precedente.
+    # Nel percorso dall'app la riapertura automatica e' parte del collaudo; l'installer silenzioso puo' richiedere un avvio manuale.
+    $fineTray = (Get-Date).AddSeconds($(if ($modo -eq 'app') { 90 } else { 15 })); $nuovoTray = @()
+    while ((Get-Date) -lt $fineTray) {
+        $nuovoTray = @(Processi-Di $nuova | Where-Object { $_.CommandLine -match 'tray\.py' -and $_.ProcessId -notin $pidVecchi })
+        if ($nuovoTray.Count -gt 0) { break }
+        Start-Sleep -Seconds 2
+    }
+    if ($nuovoTray.Count -eq 0 -and $modo -eq 'installer') {
+        Accendi $nuova
+        Start-Sleep -Seconds 3
+        $nuovoTray = @(Processi-Di $nuova | Where-Object { $_.CommandLine -match 'tray\.py' -and $_.ProcessId -notin $pidVecchi })
+    }
+    Richiedi ($nuovoTray.Count -gt 0) "prima riapertura della $versioneNuova con un nuovo processo ($modo)"
     $datiNuovi = "$Local\Memdoria-AI-Brain"
+    $finitoMotore = Wait-Job -Job $osservaMotore -Timeout 70
+    $esitoMotore = if ($finitoMotore) { Receive-Job -Job $osservaMotore -ErrorAction SilentlyContinue | Select-Object -Last 1 } else { $null }
+    if (-not $finitoMotore) { Stop-Job -Job $osservaMotore -ErrorAction SilentlyContinue }
+    Remove-Job -Job $osservaMotore -Force -ErrorAction SilentlyContinue
+    Controlla ($null -ne $esitoMotore -and $esitoMotore.visto -and -not $esitoMotore.errore) `
+        "Engine senza stato Errore durante la prima riapertura dopo $verVecchia ($modo): $($esitoMotore.motivo)"
+    Pagina-Primo-Avvio $datiNuovi $verVecchia $modo
     $p = Aspetta-Lettura $datiNuovi
     Richiedi ($null -ne $p -and -not $p.error) "dopo l'aggiornamento la lettura finisce senza errori ($($p.error))"
     if ($separata) {

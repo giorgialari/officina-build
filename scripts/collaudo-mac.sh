@@ -114,6 +114,63 @@ pagina_nel_browser() {  # <dati> <quando>
   uscita=$(printf '%s' "$uscita" | tail -1)
   controlla $r "la pagina si apre nel browser e disegna il grafo ($2): $uscita"
 }
+controlla_primo_avvio() {  # <dati>: nella prima finestra, un server lento mostra l'attesa e poi il grafo
+  local porta uscita r i
+  for i in $(seq 1 120); do [ -f "$1/config.json" ] && break; sleep 0.5; done
+  [ -f "$1/config.json" ] || { controlla 1 "prima riapertura dopo $VER_V: configurazione non pronta"; return; }
+  porta=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['brain_port'])" "$1/config.json")
+  uscita=$(node "$(dirname "$0")/pagina.mjs" "http://127.0.0.1:$porta/app/" "$RUNNER_TEMP/primo-avvio-mac-$VER_V" --server-in-riavvio 2>&1); r=$?
+  controlla $r "prima riapertura dopo $VER_V: attesa pulita e ritorno del grafo senza riavviare: $(printf '%s' "$uscita" | tail -1)"
+}
+controlla_motore() {  # <dati nuovi> <versione nuova> <dati vecchi>: osserva la PRIMA riapertura
+  local dati=$1 versione_nuova=$2 dati_vecchi=$3 porta stato visto=0 i config versione_attiva="" fine
+  # Parte prima della richiesta di aggiornamento. L'endpoint /api/setup-info identifica il processo nuovo:
+  # altrimenti si potrebbe scambiare lo stato sano della versione vecchia con quello della prima riapertura.
+  fine=$(($(date +%s) + 720))
+  while [ "$(date +%s)" -lt "$fine" ]; do
+    for config in "$dati/config.json" "$dati_vecchi/config.json"; do
+      [ -f "$config" ] || continue
+      porta=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('brain_port',''))" "$config" 2>/dev/null)
+      [ -n "$porta" ] || continue
+      versione_attiva=$(curl -fsS --max-time 1 "http://127.0.0.1:$porta/api/setup-info" 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null)
+      [ "$versione_attiva" = "$versione_nuova" ] && break 2
+    done
+    sleep 0.25
+  done
+  [ "$versione_attiva" = "$versione_nuova" ] || return 1
+  for i in $(seq 1 160); do
+    if [ -f "$dati/config.json" ]; then
+      porta=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('brain_port',''))" "$dati/config.json" 2>/dev/null)
+      if [ -n "$porta" ]; then
+        stato=$(curl -fsS --max-time 1 "http://127.0.0.1:$porta/api/modello-locale/stato" 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin).get('stato',''))" 2>/dev/null)
+        [ "$stato" = errore ] && return 1
+        [ -n "$stato" ] && visto=1
+      fi
+    fi
+    sleep 0.25
+  done
+  [ "$visto" = 1 ]
+}
+controlla_nome_dock() {  # LaunchServices: aspetta l'istanza FINALE dopo migrazione e riavvio automatico
+  local i
+  for i in $(seq 1 180); do
+    lsappinfo list | python3 -c '
+import os, plistlib, re, sys
+blocchi = re.split(r"(?m)^\s*\d+\)\s+", sys.stdin.read())
+app = [b for b in blocchi if "bundleID=\"it.aibrain.app\"" in b]
+if len(app) != 1 or not app[0].startswith("\"Memdoria AI Brain\"") or "bundle path=\"/Applications/Memdoria AI Brain.app\"" not in app[0]:
+    sys.exit(1)
+pid = re.search(r"pid = (\d+)", app[0])
+if not pid: sys.exit(1)
+try: os.kill(int(pid.group(1)), 0)
+except OSError: sys.exit(1)
+with open("/Applications/Memdoria AI Brain.app/Contents/Info.plist", "rb") as f: info = plistlib.load(f)
+sys.exit(0 if info.get("CFBundleVersion") == sys.argv[1] else 1)
+' "$VERSIONE_NUOVA" && return 0
+    sleep 1
+  done
+  return 1
+}
 prepara_feed_pulsante() {
   local versione futura
   versione=$(cat "$CODICE/VERSION")
@@ -137,21 +194,21 @@ chat_finte
 
 if [ "${CON_PULITA:-true}" = true ]; then
 say "A. Installazione pulita della versione nuova"
-monta_e_copia "$NUOVO" "Memdoria-AI-Brain.app"; controlla $? "Memdoria-AI-Brain.app copiata in Applicazioni"
+monta_e_copia "$NUOVO" "Memdoria AI Brain.app"; controlla $? "Memdoria AI Brain.app copiata in Applicazioni"
 DATI="$SUPPORTO/Memdoria-AI-Brain"
-licenza /Applications/Memdoria-AI-Brain.app "$DATI"
+licenza "/Applications/Memdoria AI Brain.app" "$DATI"
 CACHE_MODELLO="$RUNNER_TEMP/modello"
 if ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then mkdir -p "$DATI/modello-locale" && cp "$CACHE_MODELLO"/* "$DATI/modello-locale/" && echo "       modello preso dalla cache"; fi
 seme_connessione "$DATI"
 prepara_feed_pulsante; richiedi $? "elenco di prova preparato per il pulsante degli aggiornamenti"
-accendi /Applications/Memdoria-AI-Brain.app/Contents/MacOS/Memdoria nuova
+accendi "/Applications/Memdoria AI Brain.app/Contents/MacOS/Memdoria" nuova
 aspetta_lettura "$DATI"; richiedi $? "la prima lettura finisce senza errori"
 C=$(conta "$DATI" conversations); [ "${C:-0}" -ge 3 ]; controlla $? "conversazioni trovate: ${C:-0} (attese almeno 3)"
 # Una memoria con un cliente: il grafo deve mostrarlo (cio che l'AI ricava dalle chat finte puo' variare da giro a giro).
 api "$DATI" POST /admin/remember '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
 for i in $(seq 1 12); do E=$(conta "$DATI" active_entities); [ "${E:-0}" -ge 1 ] && break; sleep 10; done; [ "${E:-0}" -ge 1 ]; controlla $? "il grafo si riempie: ${E:-0} entita, $(conta "$DATI" active_memories) memorie"
 [ ! -e "$SUPPORTO/AI Brain" ] && [ ! -e "$SUPPORTO/Memdoria" ]; controlla $? "nessuna cartella dati col nome di prima in un'installazione nuova"
-"/Applications/Memdoria-AI-Brain.app/Contents/Resources/runtime/python/bin/python3.12" -E -s "$(dirname "$0")/licenze-offline.py" "/Applications/Memdoria-AI-Brain.app/Contents/Resources/runtime/app" "$CHIAVE"; controlla $? "gli stati della licenza (manca, giusta, scaduta, altro computer, firma rovinata) sull'app installata"
+"/Applications/Memdoria AI Brain.app/Contents/Resources/runtime/python/bin/python3.12" -E -s "$(dirname "$0")/licenze-offline.py" "/Applications/Memdoria AI Brain.app/Contents/Resources/runtime/app" "$CHIAVE"; controlla $? "gli stati della licenza (manca, giusta, scaduta, altro computer, firma rovinata) sull'app installata"
 collega_ai "$DATI"; controlla $? "collega le AI: la voce di Memdoria compare nei file di Claude Code"
 lingua_si_cambia "$DATI"; controlla $? "il cambio lingua (inglese e di nuovo italiano) si salva"
 # Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti)
@@ -177,16 +234,17 @@ for i in $(seq 1 12); do [ ! -d "$DATI" ] && break; sleep 5; done
 [ ! -d "$DATI" ]; controlla $? "dopo la disinstallazione i dati sono stati tolti (rimasto: $(ls -A "$DATI" 2>/dev/null | head -5 | tr '\n' ' '))"
 ! grep -q 'memdoria-ai-brain' "$HOME/.claude.json" 2>/dev/null; controlla $? "dopo la disinstallazione le voci delle AI sono state tolte"
 spegni
-rm -rf /Applications/Memdoria-AI-Brain.app "$DATI"
+rm -rf "/Applications/Memdoria AI Brain.app" /Applications/Memdoria-AI-Brain.app /Applications/Memdoria.app "$DATI"
 
 fi
 
 if [ "${SOLO_PULITA:-false}" != true ]; then
 say "B. Aggiornamento dall'app dalla versione di prima"
-# Per la 1.0.33 si collauda il passaggio dalla 1.0.32: l'app e i dati di partenza si chiamano «Memdoria».
+# Si collaudano entrambi i pacchetti distribuiti: la 1.0.32 usa Memdoria, la 1.0.33 Memdoria-AI-Brain.
 VER_V=$(basename "$VECCHIO" | sed -E 's/^AI-Brain-([0-9.]+)-.*/\1/')
-[ "$VER_V" = 1.0.32 ] || { male "la versione di partenza deve essere 1.0.32, trovata $VER_V"; exit 1; }
+[ "$VER_V" = 1.0.32 ] || [ "$VER_V" = 1.0.33 ] || { male "la versione di partenza deve essere 1.0.32|1.0.33, trovata $VER_V"; exit 1; }
 NOME_V="Memdoria"
+[ "$VER_V" = 1.0.33 ] && NOME_V="Memdoria-AI-Brain"
 APP_V="/Applications/$NOME_V.app"
 DATI_V="$SUPPORTO/$NOME_V"
 monta_e_copia "$VECCHIO" "$NOME_V.app"; controlla $? "$NOME_V.app (versione $VER_V) copiata"
@@ -198,32 +256,36 @@ VERSIONE_NUOVA=$(cat "$CODICE/VERSION")
 python3 "$(dirname "$0")/feed.py" "$CODICE" "$CHIAVE" "$RUNNER_TEMP/feed/ultima-versione.json" "$VERSIONE_NUOVA" mac "$RUNNER_TEMP/feed/$(basename "$NUOVO")" "file://$RUNNER_TEMP/feed/$(basename "$NUOVO")"
 export AI_BRAIN_UPDATES_URL="file://$RUNNER_TEMP/feed/ultima-versione.json"
 seme_connessione "$DATI_V"
-accendi "$APP_V/Contents/MacOS/$NOME_V" vecchia
+accendi "$APP_V/Contents/MacOS/Memdoria" vecchia
 aspetta_lettura "$DATI_V"; richiedi $? "la versione $VER_V finisce la lettura"
 api "$DATI_V" POST /admin/remember '{"text":"Il cliente Verdi Srl usa il gestionale Alfa dal 2024.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
 api "$DATI_V" POST /admin/remember '{"text":"Il server di Verdi Srl e in Hetzner a Norimberga.","kind":"fact","source":"collaudo","source_ai":"collaudo","entities":[{"name":"Verdi Srl","type":"client"}]}' > /dev/null
 PRIMA=$(conta "$DATI_V" memories); [ "${PRIMA:-0}" -ge 2 ]; controlla $? "memorie salvate prima dell'aggiornamento: ${PRIMA:-0}"
-if collega_ai "$DATI_V" ai-brain; then HA_VOCI=1; ok "la versione $VER_V ha collegato le AI"; else HA_VOCI=0; echo "  --   la versione $VER_V non ha collegato le AI da sola (probabile conferma a schermo): salto i controlli sulle voci dopo l'aggiornamento"; fi
+VOCE_V=ai-brain; [ "$VER_V" = 1.0.33 ] && VOCE_V=memdoria-ai-brain
+if collega_ai "$DATI_V" "$VOCE_V"; then HA_VOCI=1; ok "la versione $VER_V ha collegato le AI"; else HA_VOCI=0; echo "  --   la versione $VER_V non ha collegato le AI da sola (probabile conferma a schermo): salto i controlli sulle voci dopo l'aggiornamento"; fi
 sleep 10
+DATI_N="$SUPPORTO/Memdoria-AI-Brain"
+VERSIONE_NUOVA=$(cat "$CODICE/VERSION")
+controlla_motore "$DATI_N" "$VERSIONE_NUOVA" "$DATI_V" > "$RUNNER_TEMP/motore-primo-$VER_V.log" 2>&1 & PID_MOTORE=$!
 echo aggiorna > "$DATI_V/aggiorna.request"
-# L'aggiornatore della 1.0.32 puo' sostituire Memdoria.app sul posto: si osserva il percorso reale.
+# L'aggiornatore puo' sostituire il bundle sul posto: si osserva il percorso reale prima della prima riapertura.
 APP_N=""
 for i in $(seq 1 60); do
   sleep 10
-  for candidata in /Applications/Memdoria-AI-Brain.app /Applications/Memdoria.app; do
+  for candidata in "/Applications/Memdoria AI Brain.app" /Applications/Memdoria-AI-Brain.app /Applications/Memdoria.app; do
     [ -f "$candidata/Contents/Info.plist" ] && grep -q "<string>$VERSIONE_NUOVA</string>" "$candidata/Contents/Info.plist" && { APP_N="$candidata"; break; }
   done
   [ -n "$APP_N" ] && break
 done
 [ -n "$APP_N" ]; richiedi $? "l'app e' stata sostituita dalla $VERSIONE_NUOVA"
 NUM_APPS=0
-for candidata in /Applications/Memdoria.app /Applications/Memdoria-AI-Brain.app; do [ -d "$candidata" ] && [ ! -L "$candidata" ] && NUM_APPS=$((NUM_APPS+1)); done
+for candidata in "/Applications/Memdoria AI Brain.app" /Applications/Memdoria.app /Applications/Memdoria-AI-Brain.app; do [ -d "$candidata" ] && [ ! -L "$candidata" ] && NUM_APPS=$((NUM_APPS+1)); done
 [ "$NUM_APPS" = 1 ]; controlla $? "un solo bundle reale in Applicazioni dopo l'aggiornamento: $APP_N"
-DATI_N="$SUPPORTO/Memdoria-AI-Brain"
-for i in $(seq 1 30); do pgrep -f "$NOME_V.app/Contents/Resources/runtime/python.*tray.py" > /dev/null && break; sleep 10; done
-pgrep -f "tray.py" > /dev/null || { echo "  (l'app non si e' riaperta da sola: la accendo come farebbe la persona)"; accendi "$APP_N/Contents/MacOS/Memdoria" nuova-dopo; }
+controlla_nome_dock; richiedi $? "dopo l'aggiornamento la prima apertura automatica arriva all'istanza finale Memdoria AI Brain senza trattini"
+controlla_primo_avvio "$DATI_N"
 aspetta_lettura "$DATI_N"; richiedi $? "dopo l'aggiornamento la lettura finisce senza errori"
-[ -d /Applications/Memdoria-AI-Brain.app ] && [ ! -L /Applications/Memdoria-AI-Brain.app ] && [ -L /Applications/Memdoria.app ]; controlla $? "l'app ha il nome nuovo e Memdoria.app resta come collegamento per il ritorno indietro"
+wait "$PID_MOTORE"; controlla $? "Engine senza stato Errore durante la prima riapertura dopo $VER_V"
+[ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ] && [ -L /Applications/Memdoria-AI-Brain.app ] && [ -L /Applications/Memdoria.app ]; controlla $? "nome senza trattini nel Dock, con collegamenti per le versioni precedenti"
 [ -L "$SUPPORTO/Memdoria" ]; controlla $? "trasloco fatto: Memdoria e' un collegamento verso Memdoria-AI-Brain"
 [ -L "$HOME/.config/ai-brain" ] && [ -f "$HOME/.config/memdoria-ai-brain/token" ]; controlla $? "la cartella tecnica e' stata spostata con un collegamento per la versione di prima"
 DOPO=$(conta "$DATI_N" memories); [ "${DOPO:-0}" -ge "${PRIMA:-2}" ]; controlla $? "memorie intatte: prima ${PRIMA:-?}, dopo ${DOPO:-?}"
