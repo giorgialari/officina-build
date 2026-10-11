@@ -34,24 +34,26 @@ try:
     controlla((dati / licenza.CHECK_NAME).exists(), "il controllo firmato viene salvato")
     controlla(licenza.status(dati, kind="computer")["state"] == "ok", "dopo il controllo la licenza vale ancora")
 
-    # Il tempo senza rete, simulato: tolleranza di 3 giorni dall'ultimo controllo firmato. Ogni prova su una copia, perche'
+    # Il tempo senza rete, simulato: tolleranza di 7 giorni dall'ultimo controllo firmato. Ogni prova su una copia, perche'
     # la licenza si ricorda l'ultima ora vista e un salto in avanti falserebbe le prove dopo.
     import shutil, time
     ORA = 3600
     ultimo = licenza.read_check(dati)
     quando = licenza._parse_ts(str(ultimo.get("quando") or "")) or time.time()
-    def a_distanza(ore, prove_dopo=None):
+    def a_distanza(ore):
         copia = Path(tempfile.mkdtemp()) / "dati"
         shutil.copytree(dati, copia)
         return licenza.license_gate(copia, now_ts=quando + ore * ORA, kind="computer"), copia
     stato, _ = a_distanza(0.1)
     controlla(stato["state"] == "ok" and not stato.get("warning"), "subito dopo un controllo: vale, senza avviso")
     stato, _ = a_distanza(26)
-    controlla(stato["state"] == "ok" and bool(stato.get("warning")), "dopo 26 ore senza controllo: vale, con l'avviso")
-    stato, _ = a_distanza(71)
-    controlla(stato["state"] == "ok", "dopo 71 ore senza controllo: vale ancora (tolleranza di 3 giorni)")
-    stato, copia = a_distanza(73)
-    controlla(stato["state"] == "disconnected", f"dopo 73 ore senza controllo: si ferma («{stato['state']}»)")
+    controlla(stato["state"] == "ok" and not stato.get("warning"), "dopo 26 ore senza controllo: vale, senza avviso")
+    stato, _ = a_distanza(49)
+    controlla(stato["state"] == "ok" and bool(stato.get("warning")), "dopo 49 ore senza controllo: vale, con l'avviso")
+    stato, _ = a_distanza(167)
+    controlla(stato["state"] == "ok", "dopo 167 ore senza controllo: vale ancora (tolleranza di 7 giorni)")
+    stato, copia = a_distanza(169)
+    controlla(stato["state"] == "disconnected", f"dopo 169 ore senza controllo: si ferma («{stato['state']}»)")
     controlla(bool(stato.get("message")), "e dice alla persona cosa fare")
     # Un controllo che torna a funzionare rimette tutto a posto (qui il servizio vero risponde ora).
     risposta = licenza.check_online(copia, versione)
