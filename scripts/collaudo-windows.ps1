@@ -530,8 +530,10 @@ function Scenario-Aggiornamento([string]$modo) {
     if ($haVoci) {
         $voci = Get-Content "$env:USERPROFILE\.claude.json" -Raw
         Controlla (($voci -match '"memdoria-ai-brain"') -and ($voci -notmatch '"ai-brain"') -and ($voci -notmatch 'Local[\\/]+Memdoria"')) 'le voci delle AI usano il nome nuovo e non puntano piu'' alla cartella vecchia'
-        $codex = Get-Content "$env:USERPROFILE\.codex\config.toml" -Raw -ErrorAction SilentlyContinue
-        Controlla (($codex -match 'mcp_servers\.memdoria-ai-brain') -and ($codex -notmatch 'mcp_servers\.ai-brain')) 'anche Codex usa la voce nuova'
+        if (Test-Path "$env:USERPROFILE\.codex\config.toml") {
+            $codex = Get-Content "$env:USERPROFILE\.codex\config.toml" -Raw
+            Controlla (($codex -match 'mcp_servers\.memdoria-ai-brain') -and ($codex -notmatch 'mcp_servers\.ai-brain')) 'anche Codex usa la voce nuova'
+        }
     }
     Controlla (Lingua-Si-Cambia $datiNuovi) 'dopo l''aggiornamento il cambio lingua funziona'
     Pagina-Nel-Browser $datiNuovi "dopo l'aggiornamento ($modo)"

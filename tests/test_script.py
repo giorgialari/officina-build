@@ -591,6 +591,11 @@ def test_mac_non_esige_collegamenti_da_1034_ne_codex_se_non_installato():
     assert '[ -f "$HOME/.codex/config.toml" ]' in mac
 
 
+def test_windows_controlla_codex_solo_se_installato():
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert 'if (Test-Path "$env:USERPROFILE\\.codex\\config.toml")' in win
+
+
 def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_tutti_gli_aggiornamenti():
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert 'Avvia-Controllo-Motore' in win
