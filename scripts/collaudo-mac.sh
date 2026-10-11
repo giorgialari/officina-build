@@ -29,6 +29,11 @@ python3 -m pip install --quiet --break-system-packages cryptography 2>/dev/null 
 
 chat_finte() {
   mkdir -p "$HOME/.gemini/antigravity/brain/8bd7e99a/.system_generated/logs" "$HOME/.gemini/tmp/h1/chats" "$HOME/.claude/projects/-lavoro-sito" "$HOME/.codex"
+  # Le chat importate non installano Claude Code: nel collaudo lo rappresenta un eseguibile di prova,
+  # così il collegamento viene verificato solo per un client davvero presente sul computer usa e getta.
+  mkdir -p "$HOME/.local/bin"
+  printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/claude"
+  chmod 755 "$HOME/.local/bin/claude"
   python3 - <<'PY'
 import json, os
 h = os.path.expanduser("~")
