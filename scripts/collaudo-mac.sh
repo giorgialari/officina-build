@@ -248,10 +248,10 @@ if [ "${SOLO_PULITA:-false}" != true ]; then
 say "B. Aggiornamento dall'app dalla versione di prima"
 # Le versioni distribuite usano tre nomi del bundle; dalla 1.0.33 i dati hanno lo stesso percorso.
 VER_V=$(basename "$VECCHIO" | sed -E 's/^AI-Brain-([0-9.]+)-.*/\1/')
-[ "$VER_V" = 1.0.32 ] || [ "$VER_V" = 1.0.33 ] || [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || { male "la versione di partenza deve essere 1.0.32|1.0.33|1.0.34|1.0.35, trovata $VER_V"; exit 1; }
+[ "$VER_V" = 1.0.32 ] || [ "$VER_V" = 1.0.33 ] || [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ] || { male "la versione di partenza deve essere 1.0.32|1.0.33|1.0.34|1.0.35|1.0.36, trovata $VER_V"; exit 1; }
 NOME_V="Memdoria"
 [ "$VER_V" = 1.0.33 ] && NOME_V="Memdoria-AI-Brain"
-{ [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ]; } && NOME_V="Memdoria AI Brain"
+{ [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ]; } && NOME_V="Memdoria AI Brain"
 APP_V="/Applications/$NOME_V.app"
 DATI_V="$SUPPORTO/Memdoria-AI-Brain"
 [ "$VER_V" = 1.0.32 ] && DATI_V="$SUPPORTO/Memdoria"
@@ -293,7 +293,7 @@ controlla_nome_dock; richiedi $? "dopo l'aggiornamento la prima apertura automat
 controlla_primo_avvio "$DATI_N"
 aspetta_lettura "$DATI_N"; richiedi $? "dopo l'aggiornamento la lettura finisce senza errori"
 wait "$PID_MOTORE"; controlla $? "Engine senza stato Errore durante la prima riapertura dopo $VER_V"
-if [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ]; then
+if [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ]; then
   [ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ]; controlla $? "dalla 1.0.34 conserva il nome senza trattini dopo l'aggiornamento"
 else
   [ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ] && [ -L /Applications/Memdoria-AI-Brain.app ] && [ -L /Applications/Memdoria.app ]; controlla $? "nome senza trattini nel Dock, con collegamenti per le versioni precedenti"
