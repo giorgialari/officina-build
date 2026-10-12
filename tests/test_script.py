@@ -509,7 +509,7 @@ def test_collaudo_aggiorna_dalla_1032_1033_e_1034():
     import json
 
     versioni = json.loads((Path(__file__).resolve().parents[1] / "versioni-in-uso.json").read_text())
-    assert versioni == ["1.0.32", "1.0.33", "1.0.34"]
+    assert versioni == ["1.0.32", "1.0.35", "1.0.37"]
 
 
 def test_il_collaudo_controlla_il_pulsante_sulla_pagina_rimasta_aperta():
@@ -525,14 +525,14 @@ def test_il_collaudo_controlla_il_pulsante_sulla_pagina_rimasta_aperta():
         assert "feed.py" in script
 
 
-def test_il_collaudo_della_migrazione_distingue_1032_1033_1034_1035_e_1036():
+def test_il_collaudo_della_migrazione_distingue_1032_fino_a_1037():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert '1.0.32|1.0.33|1.0.34|1.0.35|1.0.36' in mac and '$SUPPORTO/Memdoria' in mac
+    assert '1.0.32|1.0.33|1.0.34|1.0.35|1.0.36|1.0.37' in mac and '$SUPPORTO/Memdoria' in mac
     assert 'NOME_V="Memdoria-AI-Brain"' in mac
     assert 'NOME_V="Memdoria AI Brain"' in mac
     assert "$HOME/.config/memdoria-ai-brain/token" in mac and "mcp_servers.memdoria-ai-brain" in mac
-    assert "@('1.0.32', '1.0.33', '1.0.34', '1.0.35', '1.0.36')" in win and '$Local\\Memdoria"' in win
+    assert "@('1.0.32', '1.0.33', '1.0.34', '1.0.35', '1.0.36', '1.0.37')" in win and '$Local\\Memdoria"' in win
     assert "$nomeVecchio = if ($separata) { 'Memdoria' } else { 'Memdoria-AI-Brain' }" in win
     assert 'memdoria-ai-brain\\token' in win and 'mcp_servers\\.memdoria-ai-brain' in win
 
@@ -586,7 +586,7 @@ def test_mac_chiede_il_collegamento_dei_dati_1032_solo_se_si_parte_dalla_1032():
 
 def test_mac_non_esige_collegamenti_da_1034_ne_codex_se_non_installato():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
-    assert 'if [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ]; then' in mac
+    assert 'if [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ] || [ "$VER_V" = 1.0.37 ]; then' in mac
     assert 'dalla 1.0.34 conserva il nome senza trattini' in mac
     assert '[ -f "$HOME/.codex/config.toml" ]' in mac
 
@@ -600,7 +600,7 @@ def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_tutti_gli_
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert 'Avvia-Controllo-Motore' in win
     assert '--server-in-riavvio' in win
-    assert "@('1.0.32', '1.0.33', '1.0.34', '1.0.35', '1.0.36')" in win
+    assert "@('1.0.32', '1.0.33', '1.0.34', '1.0.35', '1.0.36', '1.0.37')" in win
     assert '$pidVecchi' in win and '$nuovoTray' in win
     assert 'VERSION' in win and '$versioneNuova' in win
     assert '$osservaMotore = Avvia-Controllo-Motore' in win
