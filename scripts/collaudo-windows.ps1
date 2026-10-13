@@ -19,7 +19,14 @@ function Say($m) { Write-Host "`n=== $m" -ForegroundColor Cyan }
 # Un passo da cui dipende tutto il resto: se fallisce il collaudo si ferma qui.
 function Salva-Dettagli {
     New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
-    foreach ($d in "$Local\AI Brain", "$Local\Memdoria", "$Local\Memdoria-AI-Brain") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
+    foreach ($d in @($script:UltimiDati) + @("$Local\AI Brain", "$Local\Memdoria", "$Local\Memdoria-AI-Brain")) {
+        if (-not $d) { continue }
+        foreach ($registro in @(Get-ChildItem "$d\logs\*.log" -File -ErrorAction SilentlyContinue)) {
+            "--- $($registro.FullName)" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"
+            Get-Content $registro.FullName -Tail 200 -Encoding UTF8 -ErrorAction SilentlyContinue |
+                Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"
+        }
+    }
 }
 
 function Richiedi([bool]$ok, [string]$cosa) {
@@ -195,7 +202,10 @@ function Avvia-Controllo-Motore([string]$app, [string]$dati, [object[]]$pidVecch
         for ($i = 0; $i -lt 160; $i++) {
             try {
                 $stato = Invoke-RestMethod -Uri "http://127.0.0.1:$porta/api/modello-locale/stato" -TimeoutSec 1 -ErrorAction Stop
-                if ($stato.stato -eq 'errore') { return [pscustomobject]@{ visto = $true; errore = $true; motivo = 'Engine in errore alla prima riapertura' } }
+                if ($stato.stato -eq 'errore') {
+                    New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
+                    $stato | ConvertTo-Json -Depth 12 | Set-Content "$env:RUNNER_TEMP\riservato\engine-prima-riapertura.log" -Encoding UTF8
+                    return [pscustomobject]@{ visto = $true; errore = $true; motivo = 'Engine in errore alla prima riapertura' } }
                 if ($stato.stato) { $visto = $true }
             } catch { }
             Start-Sleep -Milliseconds 250
@@ -267,6 +277,8 @@ function Spegni-Tutto {
 
 function Disinstalla-Tutto {
     Spegni-Tutto
+    # La disinstallazione cancella anche i dati: i registri vanno raccolti prima.
+    if ($Fallimenti.Count -gt 0) { Salva-Dettagli }
     foreach ($u in (Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } |
             Where-Object { $_.DisplayName -match 'Memdoria|AI Brain' })) {
         Start-Process ($u.UninstallString -replace '"', '') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
@@ -555,8 +567,7 @@ Spegni-Tutto
 if ($Fallimenti.Count -gt 0) {
     Write-Host "`nCOLLAUDO FALLITO ($($Fallimenti.Count)):" -ForegroundColor Red
     $Fallimenti | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
-    New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
-    foreach ($d in $script:UltimiDati + "$Local\Memdoria-AI-Brain") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
+    Salva-Dettagli
     exit 1
 }
 Write-Host "`nCOLLAUDO RIUSCITO" -ForegroundColor Green

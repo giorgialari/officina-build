@@ -629,3 +629,18 @@ def test_windows_aspetta_la_fine_dell_installer_prima_del_nuovo_processo():
     assert 'while ((Get-Date) -lt $fineInstaller -and (Installer-InCorso))' in win
     assert win.index('while ((Get-Date) -lt $fineInstaller -and (Installer-InCorso))') < win.index('$fineTray =')
     assert 'Richiedi (-not (Installer-InCorso))' in win
+
+
+def test_windows_conserva_i_registri_prima_di_eliminare_i_dati():
+    script = (SCRIPT / 'collaudo-windows.ps1').read_text()
+    pulizia = script.split('function Disinstalla-Tutto {', 1)[1].split('\nfunction ', 1)[0]
+    assert pulizia.index('Salva-Dettagli') < pulizia.index('Remove-Item')
+    raccolta = script.split('function Salva-Dettagli {', 1)[1].split('\nfunction ', 1)[0]
+    assert 'Get-ChildItem' in raccolta and '*.log' in raccolta
+
+
+def test_windows_conserva_la_risposta_engine_che_ha_fatto_fallire_il_collaudo():
+    script = (SCRIPT / 'collaudo-windows.ps1').read_text()
+    controllo = script.split('function Avvia-Controllo-Motore', 1)[1].split('\nfunction ', 1)[0]
+    errore = controllo.split("if ($stato.stato -eq 'errore')", 1)[1].split('return [pscustomobject]', 1)[0]
+    assert 'ConvertTo-Json' in errore and 'engine-prima-riapertura.log' in errore
