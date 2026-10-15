@@ -528,11 +528,10 @@ def test_il_collaudo_controlla_il_pulsante_sulla_pagina_rimasta_aperta():
 def test_il_collaudo_della_migrazione_distingue_1032_fino_a_1037():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert '1.0.32|1.0.33|1.0.34|1.0.35|1.0.36|1.0.37' in mac and '$SUPPORTO/Memdoria' in mac
-    assert 'NOME_V="Memdoria-AI-Brain"' in mac
-    assert 'NOME_V="Memdoria AI Brain"' in mac
+    assert 'versione_partenza.py' in mac and '$SUPPORTO/Memdoria' in mac
+    assert 'NOME_V=$(python3' in mac
     assert "$HOME/.config/memdoria-ai-brain/token" in mac and "mcp_servers.memdoria-ai-brain" in mac
-    assert "@('1.0.32', '1.0.33', '1.0.34', '1.0.35', '1.0.36', '1.0.37')" in win and '$Local\\Memdoria"' in win
+    assert "versione_partenza.py" in win and '$Local\\Memdoria"' in win
     assert "$nomeVecchio = if ($separata) { 'Memdoria' } else { 'Memdoria-AI-Brain' }" in win
     assert 'memdoria-ai-brain\\token' in win and 'mcp_servers\\.memdoria-ai-brain' in win
 
@@ -586,7 +585,7 @@ def test_mac_chiede_il_collegamento_dei_dati_1032_solo_se_si_parte_dalla_1032():
 
 def test_mac_non_esige_collegamenti_da_1034_ne_codex_se_non_installato():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
-    assert 'if [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ] || [ "$VER_V" = 1.0.37 ]; then' in mac
+    assert 'if [ "$NOME_V" = "Memdoria AI Brain" ]; then' in mac
     assert 'dalla 1.0.34 conserva il nome senza trattini' in mac
     assert '[ -f "$HOME/.codex/config.toml" ]' in mac
 
@@ -600,7 +599,7 @@ def test_windows_controlla_motore_e_pagina_alla_prima_riapertura_dopo_tutti_gli_
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert 'Avvia-Controllo-Motore' in win
     assert '--server-in-riavvio' in win
-    assert "@('1.0.32', '1.0.33', '1.0.34', '1.0.35', '1.0.36', '1.0.37')" in win
+    assert "versione_partenza.py" in win
     assert '$pidVecchi' in win and '$nuovoTray' in win
     assert 'VERSION' in win and '$versioneNuova' in win
     assert '$osservaMotore = Avvia-Controllo-Motore' in win
@@ -630,3 +629,65 @@ def test_windows_aspetta_la_fine_dell_installer_prima_del_nuovo_processo():
     assert 'while ((Get-Date) -lt $fineInstaller -and (Installer-InCorso))' in win
     assert win.index('while ((Get-Date) -lt $fineInstaller -and (Installer-InCorso))') < win.index('$fineTray =')
     assert 'Richiedi (-not (Installer-InCorso))' in win
+
+
+def test_windows_conserva_i_registri_prima_di_eliminare_i_dati():
+    script = (SCRIPT / 'collaudo-windows.ps1').read_text()
+    pulizia = script.split('function Disinstalla-Tutto {', 1)[1].split('\nfunction ', 1)[0]
+    assert pulizia.index('Salva-Dettagli') < pulizia.index('Remove-Item')
+    raccolta = script.split('function Salva-Dettagli {', 1)[1].split('\nfunction ', 1)[0]
+    assert 'Get-ChildItem' in raccolta and '*.log' in raccolta
+
+
+def test_windows_conserva_la_risposta_engine_che_ha_fatto_fallire_il_collaudo():
+    script = (SCRIPT / 'collaudo-windows.ps1').read_text()
+    controllo = script.split('function Avvia-Controllo-Motore', 1)[1].split('\nfunction ', 1)[0]
+    errore = controllo.split("if ($stato.stato -eq 'errore')", 1)[1].split('return [pscustomobject]', 1)[0]
+    assert 'ConvertTo-Json' in errore and 'engine-prima-riapertura.log' in errore
+
+
+# --- poca memoria: l'AI del brain non si accende e non scarica niente (soglia di 8 GiB) ---------------------------------------
+def _brain_finto(tmp_path, risposta):
+    import http.server
+    import threading
+
+    class Gestore(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            corpo = json.dumps(risposta).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(corpo)))
+            self.end_headers()
+            self.wfile.write(corpo)
+
+        def log_message(self, *_):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Gestore)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    dati = tmp_path / "dati"
+    dati.mkdir()
+    (dati / "config.json").write_text(json.dumps({"brain_port": server.server_address[1]}))
+    return server, dati
+
+
+@pytest.mark.parametrize("file_del_modello,atteso", [(False, 0), (True, 1)])
+def test_con_poca_memoria_il_collaudo_vuole_lo_stato_non_supportato_e_nessun_file_scaricato(tmp_path, file_del_modello, atteso):
+    server, dati = _brain_finto(tmp_path, {"stato": "non-supportato", "messaggio": "Per l'AI del brain servono almeno 8 GB di memoria."})
+    try:
+        if file_del_modello:
+            (dati / "modello-locale").mkdir()
+            (dati / "modello-locale" / "modello.gguf.parziale").write_bytes(b"x")
+        funzione = estrai_funzione_bash("controlla_non_supportato")
+        esito = subprocess.run(["bash", "-c", f'{funzione}\ncontrolla_non_supportato "{dati}"'], timeout=60)
+        assert esito.returncode == atteso
+    finally:
+        server.shutdown()
+
+
+def test_i_collaudi_scaricano_il_modello_solo_con_almeno_8_gib_e_altrimenti_vogliono_non_supportato():
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert 'RAM_BYTE" -lt 8589934592' in mac and "controlla_non_supportato" in mac
+    assert 'RAM_BYTE" -ge 8589934592' in mac  # la cache del modello si copia solo dove il modello serve
+    assert "-ge 8GB" in win and "non-supportato" in win and "-not $ramBasta" in win
+    assert "$ramBasta -and (Test-Path" in win

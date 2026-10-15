@@ -19,7 +19,14 @@ function Say($m) { Write-Host "`n=== $m" -ForegroundColor Cyan }
 # Un passo da cui dipende tutto il resto: se fallisce il collaudo si ferma qui.
 function Salva-Dettagli {
     New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
-    foreach ($d in "$Local\AI Brain", "$Local\Memdoria", "$Local\Memdoria-AI-Brain") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
+    foreach ($d in @($script:UltimiDati) + @("$Local\AI Brain", "$Local\Memdoria", "$Local\Memdoria-AI-Brain")) {
+        if (-not $d) { continue }
+        foreach ($registro in @(Get-ChildItem "$d\logs\*.log" -File -ErrorAction SilentlyContinue)) {
+            "--- $($registro.FullName)" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"
+            Get-Content $registro.FullName -Tail 200 -Encoding UTF8 -ErrorAction SilentlyContinue |
+                Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"
+        }
+    }
 }
 
 function Richiedi([bool]$ok, [string]$cosa) {
@@ -195,7 +202,10 @@ function Avvia-Controllo-Motore([string]$app, [string]$dati, [object[]]$pidVecch
         for ($i = 0; $i -lt 160; $i++) {
             try {
                 $stato = Invoke-RestMethod -Uri "http://127.0.0.1:$porta/api/modello-locale/stato" -TimeoutSec 1 -ErrorAction Stop
-                if ($stato.stato -eq 'errore') { return [pscustomobject]@{ visto = $true; errore = $true; motivo = 'Engine in errore alla prima riapertura' } }
+                if ($stato.stato -eq 'errore') {
+                    New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
+                    $stato | ConvertTo-Json -Depth 12 | Set-Content "$env:RUNNER_TEMP\riservato\engine-prima-riapertura.log" -Encoding UTF8
+                    return [pscustomobject]@{ visto = $true; errore = $true; motivo = 'Engine in errore alla prima riapertura' } }
                 if ($stato.stato) { $visto = $true }
             } catch { }
             Start-Sleep -Milliseconds 250
@@ -267,6 +277,8 @@ function Spegni-Tutto {
 
 function Disinstalla-Tutto {
     Spegni-Tutto
+    # La disinstallazione cancella anche i dati: i registri vanno raccolti prima.
+    if ($Fallimenti.Count -gt 0) { Salva-Dettagli }
     foreach ($u in (Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { Get-ItemProperty $_.PSPath } |
             Where-Object { $_.DisplayName -match 'Memdoria|AI Brain' })) {
         Start-Process ($u.UninstallString -replace '"', '') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
@@ -290,7 +302,9 @@ if ($ConPulita) {
     Metti-Licenza $app $dati
     # Il modello di Memdoria AI (1,2 GB) arriva dalla cache della corsa, se c'e'; altrimenti lo scarica l'app e lo si tiene per la prossima.
     $cacheModello = "$env:RUNNER_TEMP\modello"
-    if (Test-Path "$cacheModello\*.gguf") { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
+    $ramInstallata = [int64](Get-CimInstance Win32_PhysicalMemory | Measure-Object Capacity -Sum).Sum
+    $ramBasta = $ramInstallata -ge 8GB   # sotto gli 8 GiB l'AI del brain non si accende e non scarica niente
+    if ($ramBasta -and (Test-Path "$cacheModello\*.gguf")) { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
     Seme-Connessione $dati
     Prepara-Feed-Pulsante
     Accendi $app
@@ -312,12 +326,28 @@ if ($ConPulita) {
     while (-not ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria') -and (Get-Date) -lt $fineAvvio) { Start-Sleep 5 }
     Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria-AI-Brain') 'avvio automatico verso la cartella nuova'
     # Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti, la macchina e'' lenta)
-    $fineModello = (Get-Date).AddMinutes(20); $modello = $false
-    while ((Get-Date) -lt $fineModello -and -not $modello) {
-        Start-Sleep 20
-        $modello = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf.ok' -ErrorAction SilentlyContinue).Count -gt 0
+    $modello = $false
+    if (-not $ramBasta) {
+        # Poca memoria: lo stato dice «non-supportato» con il suo messaggio e nessun file del modello arriva sul disco.
+        $cfgModello = Get-Content "$dati\config.json" -Raw | ConvertFrom-Json
+        $letto = $null
+        for ($k = 0; $k -lt 24 -and -not $letto; $k++) {
+            try {
+                $r = Invoke-RestMethod -Uri "http://127.0.0.1:$($cfgModello.brain_port)/api/modello-locale/stato" -TimeoutSec 2 -ErrorAction Stop
+                if ($r.stato -eq 'non-supportato' -and "$($r.messaggio)" -match '8 GB') { $letto = $r }
+            } catch { }
+            if (-not $letto) { Start-Sleep 5 }
+        }
+        $niente = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf*' -ErrorAction SilentlyContinue).Count -eq 0
+        Controlla ($null -ne $letto -and $niente) "Memdoria AI non si accende con poca memoria ($([int]($ramInstallata / 1GB)) GB): stato non-supportato con il suo messaggio, niente scaricato"
+    } else {
+        $fineModello = (Get-Date).AddMinutes(20)
+        while ((Get-Date) -lt $fineModello -and -not $modello) {
+            Start-Sleep 20
+            $modello = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf.ok' -ErrorAction SilentlyContinue).Count -gt 0
+        }
+        Controlla $modello 'Memdoria AI ha scaricato il suo modello'
     }
-    Controlla $modello 'Memdoria AI ha scaricato il suo modello'
     if ($modello) {
         $inizio = (Statistiche $dati).memories; $fineLavoro = (Get-Date).AddMinutes(10); $lavora = $false
         while ((Get-Date) -lt $fineLavoro -and -not $lavora) {
@@ -350,7 +380,8 @@ if ($ConPulita) {
 function Scenario-Aggiornamento([string]$modo) {
     # La 1.0.32 usa il vecchio percorso; dalla 1.0.33 la cartella installata è Memdoria-AI-Brain.
     $verVecchia = [regex]::Match((Split-Path $Vecchio -Leaf), 'AI-Brain-([0-9.]+)-').Groups[1].Value
-    Richiedi ($verVecchia -in @('1.0.32', '1.0.33', '1.0.34', '1.0.35', '1.0.36', '1.0.37')) "la versione di partenza e' tra 1.0.32 e 1.0.37 (trovata $verVecchia)"
+    & python "$PSScriptRoot\versione_partenza.py" $verVecchia (Get-Content "$Codice\VERSION" -TotalCount 1).Trim() | Out-Null
+    Richiedi ($LASTEXITCODE -eq 0) "versione di partenza valida e precedente alla nuova (trovata $verVecchia)"
     $separata = $verVecchia -eq '1.0.32'
     $nomeVecchio = if ($separata) { 'Memdoria' } else { 'Memdoria-AI-Brain' }
     Say "B. Aggiornamento dalla $verVecchia, accesa ($modo)"
@@ -554,8 +585,7 @@ Spegni-Tutto
 if ($Fallimenti.Count -gt 0) {
     Write-Host "`nCOLLAUDO FALLITO ($($Fallimenti.Count)):" -ForegroundColor Red
     $Fallimenti | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
-    New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\riservato" | Out-Null
-    foreach ($d in $script:UltimiDati + "$Local\Memdoria-AI-Brain") { if (Test-Path "$d\logs\launcher.log") { "--- $d" | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log"; Get-Content "$d\logs\launcher.log" -Tail 80 -Encoding UTF8 | Add-Content "$env:RUNNER_TEMP\riservato\dettagli.log" } }
+    Salva-Dettagli
     exit 1
 }
 Write-Host "`nCOLLAUDO RIUSCITO" -ForegroundColor Green

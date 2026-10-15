@@ -156,6 +156,17 @@ controlla_motore() {  # <dati nuovi> <versione nuova> <dati vecchi>: osserva la 
   done
   [ "$visto" = 1 ]
 }
+controlla_non_supportato() {  # <dati>: stato «non-supportato» con il messaggio degli 8 GB, e nessun file del modello
+  local dati=$1 i porta risposta
+  porta=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('brain_port',''))" "$dati/config.json" 2>/dev/null)
+  for i in $(seq 1 24); do
+    risposta=$(curl -fsS --max-time 2 "http://127.0.0.1:$porta/api/modello-locale/stato" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('stato',''),'|',d.get('messaggio') or '')" 2>/dev/null)
+    case "$risposta" in "non-supportato | "*"8 GB"*) break ;; esac
+    risposta=""; sleep 5
+  done
+  [ -n "$risposta" ] || return 1
+  ! ls "$dati"/modello-locale/*.gguf* > /dev/null 2>&1
+}
 controlla_nome_dock() {  # LaunchServices: aspetta l'istanza FINALE dopo migrazione e riavvio automatico
   local i
   for i in $(seq 1 180); do
@@ -204,7 +215,8 @@ monta_e_copia "$NUOVO" "Memdoria AI Brain.app"; controlla $? "Memdoria AI Brain.
 DATI="$SUPPORTO/Memdoria-AI-Brain"
 licenza "/Applications/Memdoria AI Brain.app" "$DATI"
 CACHE_MODELLO="$RUNNER_TEMP/modello"
-if ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then mkdir -p "$DATI/modello-locale" && cp "$CACHE_MODELLO"/* "$DATI/modello-locale/" && echo "       modello preso dalla cache"; fi
+RAM_BYTE=$(sysctl -n hw.memsize 2>/dev/null || echo 0)
+if [ "$RAM_BYTE" -ge 8589934592 ] && ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then mkdir -p "$DATI/modello-locale" && cp "$CACHE_MODELLO"/* "$DATI/modello-locale/" && echo "       modello preso dalla cache"; fi
 seme_connessione "$DATI"
 prepara_feed_pulsante; richiedi $? "elenco di prova preparato per il pulsante degli aggiornamenti"
 accendi "/Applications/Memdoria AI Brain.app/Contents/MacOS/Memdoria" nuova
@@ -217,10 +229,16 @@ for i in $(seq 1 12); do E=$(conta "$DATI" active_entities); [ "${E:-0}" -ge 1 ]
 "/Applications/Memdoria AI Brain.app/Contents/Resources/runtime/python/bin/python3.12" -E -s "$(dirname "$0")/licenze-offline.py" "/Applications/Memdoria AI Brain.app/Contents/Resources/runtime/app" "$CHIAVE"; controlla $? "gli stati della licenza (manca, giusta, scaduta, altro computer, firma rovinata) sull'app installata"
 collega_ai "$DATI"; controlla $? "collega le AI: la voce di Memdoria compare nei file di Claude Code"
 lingua_si_cambia "$DATI"; controlla $? "il cambio lingua (inglese e di nuovo italiano) si salva"
-# Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti)
+# Memdoria AI: con almeno 8 GiB di memoria scarica il suo modello e lavora (fino a 20 minuti); con meno non si accende,
+# dice perche' e non scarica niente (le macchine della corsa hanno circa 7 GB: 5 GB scaricati sarebbero inutili).
+if [ "$RAM_BYTE" -lt 8589934592 ]; then
+  modello=1
+  controlla_non_supportato "$DATI"; controlla $? "Memdoria AI non si accende con poca memoria ($((RAM_BYTE / 1073741824)) GB): stato non-supportato con il suo messaggio, niente scaricato"
+else
 modello=1
 for i in $(seq 1 60); do ls "$DATI"/modello-locale/*.gguf.ok > /dev/null 2>&1 && { modello=0; break; }; sleep 20; done
 controlla $modello "Memdoria AI ha scaricato il suo modello"
+fi
 if [ "$modello" = 0 ]; then
   inizio=$(conta "$DATI" memories); lavora=1
   for i in $(seq 1 30); do [ -f "$DATI/modello-locale/stato.json" ] || [ "$(conta "$DATI" memories)" -gt "${inizio:-0}" ] && { lavora=0; break; }; sleep 20; done
@@ -248,10 +266,7 @@ if [ "${SOLO_PULITA:-false}" != true ]; then
 say "B. Aggiornamento dall'app dalla versione di prima"
 # Le versioni distribuite usano tre nomi del bundle; dalla 1.0.33 i dati hanno lo stesso percorso.
 VER_V=$(basename "$VECCHIO" | sed -E 's/^AI-Brain-([0-9.]+)-.*/\1/')
-[ "$VER_V" = 1.0.32 ] || [ "$VER_V" = 1.0.33 ] || [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ] || [ "$VER_V" = 1.0.37 ] || { male "la versione di partenza deve essere 1.0.32|1.0.33|1.0.34|1.0.35|1.0.36|1.0.37, trovata $VER_V"; exit 1; }
-NOME_V="Memdoria"
-[ "$VER_V" = 1.0.33 ] && NOME_V="Memdoria-AI-Brain"
-{ [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ] || [ "$VER_V" = 1.0.37 ]; } && NOME_V="Memdoria AI Brain"
+NOME_V=$(python3 "$(dirname "$0")/versione_partenza.py" "$VER_V" "$(cat "$CODICE/VERSION")") || { male "versione di partenza non valida: $VER_V"; exit 1; }
 APP_V="/Applications/$NOME_V.app"
 DATI_V="$SUPPORTO/Memdoria-AI-Brain"
 [ "$VER_V" = 1.0.32 ] && DATI_V="$SUPPORTO/Memdoria"
@@ -293,7 +308,7 @@ controlla_nome_dock; richiedi $? "dopo l'aggiornamento la prima apertura automat
 controlla_primo_avvio "$DATI_N"
 aspetta_lettura "$DATI_N"; richiedi $? "dopo l'aggiornamento la lettura finisce senza errori"
 wait "$PID_MOTORE"; controlla $? "Engine senza stato Errore durante la prima riapertura dopo $VER_V"
-if [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ] || [ "$VER_V" = 1.0.37 ]; then
+if [ "$NOME_V" = "Memdoria AI Brain" ]; then
   [ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ]; controlla $? "dalla 1.0.34 conserva il nome senza trattini dopo l'aggiornamento"
 else
   [ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ] && [ -L /Applications/Memdoria-AI-Brain.app ] && [ -L /Applications/Memdoria.app ]; controlla $? "nome senza trattini nel Dock, con collegamenti per le versioni precedenti"
