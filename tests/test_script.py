@@ -646,7 +646,7 @@ def test_windows_conserva_la_risposta_engine_che_ha_fatto_fallire_il_collaudo():
     assert 'ConvertTo-Json' in errore and 'engine-prima-riapertura.log' in errore
 
 
-# --- poca memoria: l'AI del brain non si accende e non scarica niente (soglia di 16 GiB) ---------------------------------------
+# --- poca memoria: l'AI del brain non si accende e non scarica niente (soglia di 8 GiB) ---------------------------------------
 def _brain_finto(tmp_path, risposta):
     import http.server
     import threading
@@ -672,7 +672,7 @@ def _brain_finto(tmp_path, risposta):
 
 @pytest.mark.parametrize("file_del_modello,atteso", [(False, 0), (True, 1)])
 def test_con_poca_memoria_il_collaudo_vuole_lo_stato_non_supportato_e_nessun_file_scaricato(tmp_path, file_del_modello, atteso):
-    server, dati = _brain_finto(tmp_path, {"stato": "non-supportato", "messaggio": "Per l'AI del brain servono almeno 16 GB di memoria."})
+    server, dati = _brain_finto(tmp_path, {"stato": "non-supportato", "messaggio": "Per l'AI del brain servono almeno 8 GB di memoria."})
     try:
         if file_del_modello:
             (dati / "modello-locale").mkdir()
@@ -684,10 +684,10 @@ def test_con_poca_memoria_il_collaudo_vuole_lo_stato_non_supportato_e_nessun_fil
         server.shutdown()
 
 
-def test_i_collaudi_scaricano_il_modello_solo_con_almeno_16_gib_e_altrimenti_vogliono_non_supportato():
+def test_i_collaudi_scaricano_il_modello_solo_con_almeno_8_gib_e_altrimenti_vogliono_non_supportato():
     mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
     win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
-    assert 'RAM_BYTE" -lt 17179869184' in mac and "controlla_non_supportato" in mac
-    assert 'RAM_BYTE" -ge 17179869184' in mac  # la cache del modello si copia solo dove il modello serve
-    assert "-ge 16GB" in win and "non-supportato" in win and "-not $ramBasta" in win
+    assert 'RAM_BYTE" -lt 8589934592' in mac and "controlla_non_supportato" in mac
+    assert 'RAM_BYTE" -ge 8589934592' in mac  # la cache del modello si copia solo dove il modello serve
+    assert "-ge 8GB" in win and "non-supportato" in win and "-not $ramBasta" in win
     assert "$ramBasta -and (Test-Path" in win

@@ -156,12 +156,12 @@ controlla_motore() {  # <dati nuovi> <versione nuova> <dati vecchi>: osserva la 
   done
   [ "$visto" = 1 ]
 }
-controlla_non_supportato() {  # <dati>: stato «non-supportato» con il messaggio dei 16 GB, e nessun file del modello
+controlla_non_supportato() {  # <dati>: stato «non-supportato» con il messaggio degli 8 GB, e nessun file del modello
   local dati=$1 i porta risposta
   porta=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('brain_port',''))" "$dati/config.json" 2>/dev/null)
   for i in $(seq 1 24); do
     risposta=$(curl -fsS --max-time 2 "http://127.0.0.1:$porta/api/modello-locale/stato" 2>/dev/null | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('stato',''),'|',d.get('messaggio') or '')" 2>/dev/null)
-    case "$risposta" in "non-supportato | "*"16 GB"*) break ;; esac
+    case "$risposta" in "non-supportato | "*"8 GB"*) break ;; esac
     risposta=""; sleep 5
   done
   [ -n "$risposta" ] || return 1
@@ -216,7 +216,7 @@ DATI="$SUPPORTO/Memdoria-AI-Brain"
 licenza "/Applications/Memdoria AI Brain.app" "$DATI"
 CACHE_MODELLO="$RUNNER_TEMP/modello"
 RAM_BYTE=$(sysctl -n hw.memsize 2>/dev/null || echo 0)
-if [ "$RAM_BYTE" -ge 17179869184 ] && ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then mkdir -p "$DATI/modello-locale" && cp "$CACHE_MODELLO"/* "$DATI/modello-locale/" && echo "       modello preso dalla cache"; fi
+if [ "$RAM_BYTE" -ge 8589934592 ] && ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then mkdir -p "$DATI/modello-locale" && cp "$CACHE_MODELLO"/* "$DATI/modello-locale/" && echo "       modello preso dalla cache"; fi
 seme_connessione "$DATI"
 prepara_feed_pulsante; richiedi $? "elenco di prova preparato per il pulsante degli aggiornamenti"
 accendi "/Applications/Memdoria AI Brain.app/Contents/MacOS/Memdoria" nuova
@@ -229,9 +229,9 @@ for i in $(seq 1 12); do E=$(conta "$DATI" active_entities); [ "${E:-0}" -ge 1 ]
 "/Applications/Memdoria AI Brain.app/Contents/Resources/runtime/python/bin/python3.12" -E -s "$(dirname "$0")/licenze-offline.py" "/Applications/Memdoria AI Brain.app/Contents/Resources/runtime/app" "$CHIAVE"; controlla $? "gli stati della licenza (manca, giusta, scaduta, altro computer, firma rovinata) sull'app installata"
 collega_ai "$DATI"; controlla $? "collega le AI: la voce di Memdoria compare nei file di Claude Code"
 lingua_si_cambia "$DATI"; controlla $? "il cambio lingua (inglese e di nuovo italiano) si salva"
-# Memdoria AI: con almeno 16 GiB di memoria scarica il suo modello e lavora (fino a 20 minuti); con meno non si accende,
+# Memdoria AI: con almeno 8 GiB di memoria scarica il suo modello e lavora (fino a 20 minuti); con meno non si accende,
 # dice perche' e non scarica niente (le macchine della corsa hanno circa 7 GB: 5 GB scaricati sarebbero inutili).
-if [ "$RAM_BYTE" -lt 17179869184 ]; then
+if [ "$RAM_BYTE" -lt 8589934592 ]; then
   modello=1
   controlla_non_supportato "$DATI"; controlla $? "Memdoria AI non si accende con poca memoria ($((RAM_BYTE / 1073741824)) GB): stato non-supportato con il suo messaggio, niente scaricato"
 else

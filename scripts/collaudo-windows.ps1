@@ -303,7 +303,7 @@ if ($ConPulita) {
     # Il modello di Memdoria AI (1,2 GB) arriva dalla cache della corsa, se c'e'; altrimenti lo scarica l'app e lo si tiene per la prossima.
     $cacheModello = "$env:RUNNER_TEMP\modello"
     $ramInstallata = [int64](Get-CimInstance Win32_PhysicalMemory | Measure-Object Capacity -Sum).Sum
-    $ramBasta = $ramInstallata -ge 16GB   # sotto i 16 GiB l'AI del brain non si accende e non scarica niente
+    $ramBasta = $ramInstallata -ge 8GB   # sotto gli 8 GiB l'AI del brain non si accende e non scarica niente
     if ($ramBasta -and (Test-Path "$cacheModello\*.gguf")) { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
     Seme-Connessione $dati
     Prepara-Feed-Pulsante
@@ -334,7 +334,7 @@ if ($ConPulita) {
         for ($k = 0; $k -lt 24 -and -not $letto; $k++) {
             try {
                 $r = Invoke-RestMethod -Uri "http://127.0.0.1:$($cfgModello.brain_port)/api/modello-locale/stato" -TimeoutSec 2 -ErrorAction Stop
-                if ($r.stato -eq 'non-supportato' -and "$($r.messaggio)" -match '16 GB') { $letto = $r }
+                if ($r.stato -eq 'non-supportato' -and "$($r.messaggio)" -match '8 GB') { $letto = $r }
             } catch { }
             if (-not $letto) { Start-Sleep 5 }
         }
