@@ -302,7 +302,9 @@ if ($ConPulita) {
     Metti-Licenza $app $dati
     # Il modello di Memdoria AI (1,2 GB) arriva dalla cache della corsa, se c'e'; altrimenti lo scarica l'app e lo si tiene per la prossima.
     $cacheModello = "$env:RUNNER_TEMP\modello"
-    if (Test-Path "$cacheModello\*.gguf") { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
+    $ramInstallata = [int64](Get-CimInstance Win32_PhysicalMemory | Measure-Object Capacity -Sum).Sum
+    $ramBasta = $ramInstallata -ge 16GB   # sotto i 16 GiB l'AI del brain non si accende e non scarica niente
+    if ($ramBasta -and (Test-Path "$cacheModello\*.gguf")) { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
     Seme-Connessione $dati
     Prepara-Feed-Pulsante
     Accendi $app
@@ -324,12 +326,28 @@ if ($ConPulita) {
     while (-not ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria') -and (Get-Date) -lt $fineAvvio) { Start-Sleep 5 }
     Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria-AI-Brain') 'avvio automatico verso la cartella nuova'
     # Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti, la macchina e'' lenta)
-    $fineModello = (Get-Date).AddMinutes(20); $modello = $false
-    while ((Get-Date) -lt $fineModello -and -not $modello) {
-        Start-Sleep 20
-        $modello = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf.ok' -ErrorAction SilentlyContinue).Count -gt 0
+    $modello = $false
+    if (-not $ramBasta) {
+        # Poca memoria: lo stato dice «non-supportato» con il suo messaggio e nessun file del modello arriva sul disco.
+        $cfgModello = Get-Content "$dati\config.json" -Raw | ConvertFrom-Json
+        $letto = $null
+        for ($k = 0; $k -lt 24 -and -not $letto; $k++) {
+            try {
+                $r = Invoke-RestMethod -Uri "http://127.0.0.1:$($cfgModello.brain_port)/api/modello-locale/stato" -TimeoutSec 2 -ErrorAction Stop
+                if ($r.stato -eq 'non-supportato' -and "$($r.messaggio)" -match '16 GB') { $letto = $r }
+            } catch { }
+            if (-not $letto) { Start-Sleep 5 }
+        }
+        $niente = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf*' -ErrorAction SilentlyContinue).Count -eq 0
+        Controlla ($null -ne $letto -and $niente) "Memdoria AI non si accende con poca memoria ($([int]($ramInstallata / 1GB)) GB): stato non-supportato con il suo messaggio, niente scaricato"
+    } else {
+        $fineModello = (Get-Date).AddMinutes(20)
+        while ((Get-Date) -lt $fineModello -and -not $modello) {
+            Start-Sleep 20
+            $modello = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf.ok' -ErrorAction SilentlyContinue).Count -gt 0
+        }
+        Controlla $modello 'Memdoria AI ha scaricato il suo modello'
     }
-    Controlla $modello 'Memdoria AI ha scaricato il suo modello'
     if ($modello) {
         $inizio = (Statistiche $dati).memories; $fineLavoro = (Get-Date).AddMinutes(10); $lavora = $false
         while ((Get-Date) -lt $fineLavoro -and -not $lavora) {

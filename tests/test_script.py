@@ -644,3 +644,50 @@ def test_windows_conserva_la_risposta_engine_che_ha_fatto_fallire_il_collaudo():
     controllo = script.split('function Avvia-Controllo-Motore', 1)[1].split('\nfunction ', 1)[0]
     errore = controllo.split("if ($stato.stato -eq 'errore')", 1)[1].split('return [pscustomobject]', 1)[0]
     assert 'ConvertTo-Json' in errore and 'engine-prima-riapertura.log' in errore
+
+
+# --- poca memoria: l'AI del brain non si accende e non scarica niente (soglia di 16 GiB) ---------------------------------------
+def _brain_finto(tmp_path, risposta):
+    import http.server
+    import threading
+
+    class Gestore(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            corpo = json.dumps(risposta).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(corpo)))
+            self.end_headers()
+            self.wfile.write(corpo)
+
+        def log_message(self, *_):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Gestore)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    dati = tmp_path / "dati"
+    dati.mkdir()
+    (dati / "config.json").write_text(json.dumps({"brain_port": server.server_address[1]}))
+    return server, dati
+
+
+@pytest.mark.parametrize("file_del_modello,atteso", [(False, 0), (True, 1)])
+def test_con_poca_memoria_il_collaudo_vuole_lo_stato_non_supportato_e_nessun_file_scaricato(tmp_path, file_del_modello, atteso):
+    server, dati = _brain_finto(tmp_path, {"stato": "non-supportato", "messaggio": "Per l'AI del brain servono almeno 16 GB di memoria."})
+    try:
+        if file_del_modello:
+            (dati / "modello-locale").mkdir()
+            (dati / "modello-locale" / "modello.gguf.parziale").write_bytes(b"x")
+        funzione = estrai_funzione_bash("controlla_non_supportato")
+        esito = subprocess.run(["bash", "-c", f'{funzione}\ncontrolla_non_supportato "{dati}"'], timeout=60)
+        assert esito.returncode == atteso
+    finally:
+        server.shutdown()
+
+
+def test_i_collaudi_scaricano_il_modello_solo_con_almeno_16_gib_e_altrimenti_vogliono_non_supportato():
+    mac = (SCRIPT / "collaudo-mac.sh").read_text(encoding="utf-8")
+    win = (SCRIPT / "collaudo-windows.ps1").read_text(encoding="utf-8")
+    assert 'RAM_BYTE" -lt 17179869184' in mac and "controlla_non_supportato" in mac
+    assert 'RAM_BYTE" -ge 17179869184' in mac  # la cache del modello si copia solo dove il modello serve
+    assert "-ge 16GB" in win and "non-supportato" in win and "-not $ramBasta" in win
+    assert "$ramBasta -and (Test-Path" in win
