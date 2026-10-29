@@ -22,6 +22,9 @@ echo "Pubblico la versione $V dal tuo Mac (come sempre)."
 read -r -p "Continuo? [s/N] " r; [ "$r" = s ] || exit 0
 NOTE=$(tr '\n' ' ' < "$codice/NOVITA.txt")
 cd "$codice"
+# Prima il servizio delle licenze e il gestionale, alla stessa versione (dal 29/10/2026 escono con il brain). Se il servizio
+# nuovo non risponde con questa versione, sul server torna da solo quello di prima e qui ci si ferma: l'app non esce.
+bash deploy/licenze/installa.sh
 uv run --no-project --with cryptography python deploy/comune/pubblica.py --mac "$(ls "$lavoro"/rilascio-mac/*.dmg)" --windows "$(ls "$lavoro"/rilascio-windows/*.exe)" --note "$NOTE"
 uv run --no-project --with cryptography python deploy/comune/pubblica_server.py --versione "$V" \
   --amd64 "$(ls "$lavoro"/rilascio-server-amd64/*.tar)" --arm64 "$(ls "$lavoro"/rilascio-server-arm64/*.tar)"
