@@ -342,9 +342,9 @@ jobs:
       if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Modelli della ricerca
       run: |
-        python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
+        # Con uv e Python 3.12 (quello dell'app): su macos-15 il python3 di sistema non installa pacchetti (PEP 668).
         M="$AI_BRAIN_VENDOR/common/models"; mkdir -p "$M"
-        cd codice && FASTEMBED_CACHE_PATH="$M" HF_HOME="$M/huggingface" HF_HUB_DISABLE_XET=1 PYTHONPATH="$PWD" python3 scripts/download_models.py > /dev/null 2>&1
+        cd codice && FASTEMBED_CACHE_PATH="$M" HF_HOME="$M/huggingface" HF_HUB_DISABLE_XET=1 PYTHONPATH="$PWD" "$HOME/.local/bin/uv" run --quiet --no-project --python 3.12 --with "fastembed>=0.7.3,<0.8" --with onnxruntime==1.30.0 python scripts/download_models.py > /dev/null 2>&1
       if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Il dmg (firmato con la chiave di prova)
       env:
@@ -645,9 +645,9 @@ jobs:
         test -x "$HOME/.local/bin/uv" && echo "uv pronto"
     - name: Modelli della ricerca
       run: |
-        python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
+        # Con uv e Python 3.12 (quello dell'app): su macos-15 il python3 di sistema non installa pacchetti (PEP 668).
         M="$AI_BRAIN_VENDOR/common/models"; mkdir -p "$M"
-        cd codice && FASTEMBED_CACHE_PATH="$M" HF_HOME="$M/huggingface" HF_HUB_DISABLE_XET=1 PYTHONPATH="$PWD" python3 scripts/download_models.py > /dev/null 2>&1
+        cd codice && FASTEMBED_CACHE_PATH="$M" HF_HOME="$M/huggingface" HF_HUB_DISABLE_XET=1 PYTHONPATH="$PWD" "$HOME/.local/bin/uv" run --quiet --no-project --python 3.12 --with "fastembed>=0.7.3,<0.8" --with onnxruntime==1.30.0 python scripts/download_models.py > /dev/null 2>&1
     - name: Il dmg (firmato con la chiave vera)
       env:
         CHIAVE_FIRMA: ${{ secrets.CHIAVE_FIRMA }}
