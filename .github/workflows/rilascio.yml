@@ -274,7 +274,7 @@ jobs:
     needs:
     - mac-chiavi
     - versioni
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -382,7 +382,7 @@ jobs:
     needs:
     - mac-costruisci
     - versioni
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 240
     steps:
     - name: 'Spotlight spento (macchina usa e getta: scritture piu'' veloci)'
@@ -615,7 +615,7 @@ jobs:
     name: Rilascio · Mac firmato
     needs:
     - esito-collaudi
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 120
     env:
       AI_BRAIN_VENDOR: ${{ github.workspace }}/lavoro/vendor
