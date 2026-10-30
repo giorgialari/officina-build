@@ -25,7 +25,11 @@ say() { printf '\n=== %s\n' "$1"; }
 
 export AI_BRAIN_LICENSE_CHECK_URL=http://127.0.0.1:9/controlla AI_BRAIN_LICENSE_URL=http://127.0.0.1:9/attiva
 SUPPORTO="$HOME/Library/Application Support"
-python3 -m pip install --quiet --break-system-packages cryptography 2>/dev/null || python3 -m pip install --quiet cryptography
+# Un ambiente Python solo per il collaudo, con cryptography, davanti a tutto: su macos-15 il python3 di sistema non installa
+# pacchetti (PEP 668), e così ogni «python3» qui sotto lo usa.
+AMBIENTE="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/python-collaudo"
+python3 -m venv "$AMBIENTE" && "$AMBIENTE/bin/python3" -m pip install --quiet cryptography
+export PATH="$AMBIENTE/bin:$PATH"
 
 chat_finte() {
   mkdir -p "$HOME/.gemini/antigravity/brain/8bd7e99a/.system_generated/logs" "$HOME/.gemini/tmp/h1/chats" "$HOME/.claude/projects/-lavoro-sito" "$HOME/.codex"
