@@ -300,7 +300,7 @@ if ($ConPulita) {
     Controlla (Test-Path "$app\runtime\python\Memdoria AI Brain.exe") 'l''app e'' in Programs\Memdoria-AI-Brain'
     $dati = "$Local\Memdoria-AI-Brain"
     Metti-Licenza $app $dati
-    # Il modello di Memdoria AI (1,2 GB) arriva dalla cache della corsa, se c'e'; altrimenti lo scarica l'app e lo si tiene per la prossima.
+    # Il modello di Memdoria AI (1,2 GB) arriva dalla cache della corsa, se c'e'; altrimenti l'app prova a scaricarlo e il sito lo nega (licenza di prova).
     $cacheModello = "$env:RUNNER_TEMP\modello"
     $ramInstallata = [int64](Get-CimInstance Win32_PhysicalMemory | Measure-Object Capacity -Sum).Sum
     $ramBasta = $ramInstallata -ge 8GB   # sotto gli 8 GiB l'AI del brain non si accende e non scarica niente
@@ -340,13 +340,28 @@ if ($ConPulita) {
         }
         $niente = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf*' -ErrorAction SilentlyContinue).Count -eq 0
         Controlla ($null -ne $letto -and $niente) "Memdoria AI non si accende con poca memoria ($([int]($ramInstallata / 1GB)) GB): stato non-supportato con il suo messaggio, niente scaricato"
+    } elseif (-not (Test-Path "$cacheModello\*.gguf")) {
+        # Senza il modello nella cache: dal 30/10/2026 il sito lo da'' solo con il codice di una licenza vera, e questa
+        # e'' una licenza di prova. L''app deve dirlo ('serve una licenza attiva') e non scaricare niente.
+        $cfgModello = Get-Content "$dati\config.json" -Raw | ConvertFrom-Json
+        $letto = $null
+        $fineModello = (Get-Date).AddMinutes(5)
+        while ((Get-Date) -lt $fineModello -and -not $letto) {
+            try {
+                $r = Invoke-RestMethod -Uri "http://127.0.0.1:$($cfgModello.brain_port)/api/modello-locale/stato" -TimeoutSec 2 -ErrorAction Stop
+                if ("$($r.messaggio)" -match 'licenza attiva|active license') { $letto = $r }
+            } catch { }
+            if (-not $letto) { Start-Sleep 10 }
+        }
+        $niente = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf.ok' -ErrorAction SilentlyContinue).Count -eq 0
+        Controlla ($null -ne $letto -and $niente) 'Memdoria AI senza una licenza vera non scarica il modello e lo dice'
     } else {
         $fineModello = (Get-Date).AddMinutes(20)
         while ((Get-Date) -lt $fineModello -and -not $modello) {
             Start-Sleep 20
             $modello = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf.ok' -ErrorAction SilentlyContinue).Count -gt 0
         }
-        Controlla $modello 'Memdoria AI ha scaricato il suo modello'
+        Controlla $modello 'Memdoria AI ha il suo modello (dalla cache) e parte'
     }
     if ($modello) {
         $inizio = (Statistiche $dati).memories; $fineLavoro = (Get-Date).AddMinutes(10); $lavora = $false
