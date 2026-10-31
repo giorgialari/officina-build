@@ -24,7 +24,7 @@ echo "::add-mask::$chiave"
 mkdir -p "$dove"
 curl -fL --retry 3 --max-time 3600 -H "X-AI-Brain-Codice: $chiave" -o "$dove/$file.parziale" "$url"
 [ "$(wc -c < "$dove/$file.parziale" | tr -d ' ')" = "$dimensione" ] || { echo "Il modello scaricato non ha la dimensione del registro." >&2; exit 1; }
-trovata=$(sha256sum "$dove/$file.parziale" | cut -d' ' -f1)
+trovata=$(sha256sum < "$dove/$file.parziale" | cut -d' ' -f1)  # dall ingresso: su Windows un percorso con \ fa mettere una \ davanti all impronta
 [ "$trovata" = "$sha" ] || { echo "Il modello scaricato non ha l'impronta del registro (${trovata:0:12}… invece di ${sha:0:12}…)." >&2; exit 1; }
 mv "$dove/$file.parziale" "$dove/$file"
 echo "Modello $file preso dal sito con il permesso del collaudo ($dimensione byte, impronta giusta)."
