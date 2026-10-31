@@ -28,4 +28,9 @@ bash deploy/licenze/installa.sh
 uv run --no-project --with cryptography python deploy/comune/pubblica.py --mac "$(ls "$lavoro"/rilascio-mac/*.dmg)" --windows "$(ls "$lavoro"/rilascio-windows/*.exe)" --note "$NOTE"
 uv run --no-project --with cryptography python deploy/comune/pubblica_server.py --versione "$V" \
   --amd64 "$(ls "$lavoro"/rilascio-server-amd64/*.tar)" --arm64 "$(ls "$lavoro"/rilascio-server-arm64/*.tar)"
+# Le rivendite sempre all'ultima versione (31/10/2026): rifà e ripubblica le immagini di quelle già sul sito. Se una non
+# si rifà, l'app è già uscita lo stesso: lo dice e si rilancia a mano.
+if [ -f deploy/edizione/ripubblica.sh ]; then
+  bash deploy/edizione/ripubblica.sh || echo "Rivendite: qualcuna non è stata rifatta (vedi sopra). Rilancia bash deploy/edizione/ripubblica.sh."
+fi
 echo "Fatto. Cancella la cartella $lavoro quando vuoi."
