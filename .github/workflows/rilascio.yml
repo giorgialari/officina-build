@@ -482,13 +482,13 @@ jobs:
       run: |
         V=$(cat codice/VERSION)
         echo "V=$V" >> "$GITHUB_ENV"
-        scripts/riservato.sh immagine-nuova codice 'naming to|DONE' -- docker build -f deploy/server/Dockerfile --build-arg AI_BRAIN_VERSION="$V" -t "ai-brain-server:$V" .
+        scripts/riservato.sh immagine-nuova codice 'naming to|DONE' -- docker build -f deploy/server/Dockerfile --build-arg STRIP_SOURCES=1 --build-arg AI_BRAIN_VERSION="$V" -t "ai-brain-server:$V" .
     - name: Immagine di prima
       if: ${{ needs.versioni.outputs.primo != '' }}
       run: |
         VV=$(cat codice-vecchio/VERSION)
         echo "VV=$VV" >> "$GITHUB_ENV"
-        scripts/riservato.sh immagine-vecchia codice-vecchio 'naming to|DONE' -- docker build -f deploy/server/Dockerfile --build-arg AI_BRAIN_VERSION="$VV" -t "ai-brain-server:$VV" .
+        scripts/riservato.sh immagine-vecchia codice-vecchio 'naming to|DONE' -- docker build -f deploy/server/Dockerfile --build-arg STRIP_SOURCES=1 --build-arg AI_BRAIN_VERSION="$VV" -t "ai-brain-server:$VV" .
     - name: Il server si accende (la versione di prima se c'e', altrimenti la nuova)
       run: |
         cat > codice/deploy/server/.env <<EOF

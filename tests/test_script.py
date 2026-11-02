@@ -691,3 +691,13 @@ def test_i_collaudi_scaricano_il_modello_solo_con_almeno_8_gib_e_altrimenti_vogl
     assert 'RAM_BYTE" -ge 8589934592' in mac  # la cache del modello si copia solo dove il modello serve
     assert "-ge 8GB" in win and "non-supportato" in win and "-not $ramBasta" in win
     assert "$ramBasta -and (Test-Path" in win
+
+
+def test_il_collaudo_del_server_usa_l_immagine_compilata_come_quella_pubblicata():
+    """Il collaudo del server (installa, scrive, aggiorna) gira sull'immagine compilata (STRIP_SOURCES=1), la stessa del
+    rilascio: un'immagine senza compilazione può partire anche quando quella pubblicata non parte."""
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
+    costruzioni = [r for r in s.splitlines() if "docker build -f deploy/server/Dockerfile" in r]
+    assert len(costruzioni) == 2
+    assert all("--build-arg STRIP_SOURCES=1" in r for r in costruzioni)
