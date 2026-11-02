@@ -710,3 +710,10 @@ def test_il_collaudo_di_mac_e_windows_mette_la_chiave_di_prova_anche_negli_aggio
     s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
     assert s.count("f=codice/backend/app/aggiornamenti.py") == 2
     assert s.count("s/xPpqgamp9koyNeXOd2HxAgjIQeoIIRv6KabHLMTOnV4/$PUBBLICA/; s/WQnpInQs1EYt4ybJjXSohuf6KuIbSd6wVpwORy--Wi8/$PUBBLICA/") == 2
+
+
+def test_il_rilascio_avvia_davvero_l_immagine_del_server_su_ogni_processore():
+    """L'immagine compilata si costruisce per amd64 e arm64: oltre a firme e pagina, deve partire e rispondere a /health."""
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
+    assert "8765/health" in s and "L'immagine $ARCH non parte" in s

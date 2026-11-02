@@ -752,6 +752,14 @@ jobs:
         [ "$(docker image inspect --format '{{json .RootFS.Layers}}' "ai-brain-server:$V")" = "$STRATI" ] || { echo "Strati diversi dopo la compressione"; exit 1; }
         docker run --rm --platform "linux/$ARCH" --entrypoint python "ai-brain-server:$V" -B -c "import sys; sys.path.insert(0, '/app'); import integrita; sys.exit(integrita.main(['controlla']))"
         docker run --rm --platform "linux/$ARCH" --entrypoint python "ai-brain-server:$V" -B -c "import pathlib, sys; sys.exit(0 if pathlib.Path('/app/web-brain/index.html').is_file() else 1)"
+        # L'immagine che si pubblica (tutta compilata) deve anche PARTIRE, su ogni processore: col grafo accanto, finché
+        # /health risponde. Il collaudo del server prova installazione e aggiornamento solo su amd64.
+        docker network create prova-avvio > /dev/null
+        docker run -d --name prova-grafo --network prova-avvio --network-alias brain-neo4j -e NEO4J_AUTH=neo4j/prova-avvio-123 neo4j:5.26-community > /dev/null
+        docker run -d --name prova-brain --network prova-avvio -e NEO4J_PASSWORD=prova-avvio-123 -e BRAIN_TOKEN=prova-avvio-token "ai-brain-server:$V" > /dev/null
+        for i in $(seq 1 60); do docker exec prova-brain python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/health', timeout=3)" > /dev/null 2>&1 && break; sleep 5; done
+        docker exec prova-brain python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/health', timeout=3)" || { docker logs --tail 60 prova-brain; echo "L'immagine $ARCH non parte"; exit 1; }
+        docker rm -f prova-brain prova-grafo > /dev/null && docker network rm prova-avvio > /dev/null
         echo "[server $ARCH] immagine firmata e controllata ($((BYTE / 1000000)) MB)"
     - name: Allegato cifrato
       run: scripts/proteggi.sh codice/rilascio protetto '*.tar'
