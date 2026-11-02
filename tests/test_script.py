@@ -718,6 +718,8 @@ def test_il_rilascio_avvia_davvero_l_immagine_del_server_su_ogni_processore():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
     assert "8765/health" in s and "L'immagine $ARCH non parte" in s
+    assert "-e AI_BRAIN_MODE=server -e AI_BRAIN_DATA_DIR=/data" in s  # come nel compose: se no non parte, giustamente
+    assert s.index("cypher-shell -u neo4j -p prova-avvio-123") < s.index("--name prova-brain")  # prima il grafo pronto
 
 
 def test_il_collaudo_del_server_firma_le_impronte_delle_immagini_compilate():

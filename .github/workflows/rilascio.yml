@@ -771,7 +771,11 @@ jobs:
         # /health risponde. Il collaudo del server prova installazione e aggiornamento solo su amd64.
         docker network create prova-avvio > /dev/null
         docker run -d --name prova-grafo --network prova-avvio --network-alias brain-neo4j -e NEO4J_AUTH=neo4j/prova-avvio-123 neo4j:5.26-community > /dev/null
-        docker run -d --name prova-brain --network prova-avvio -e NEO4J_PASSWORD=prova-avvio-123 -e BRAIN_TOKEN=prova-avvio-token "ai-brain-server:$V" > /dev/null
+        for i in $(seq 1 60); do docker exec prova-grafo cypher-shell -u neo4j -p prova-avvio-123 'RETURN 1' > /dev/null 2>&1 && break; sleep 3; done
+        # Le impostazioni che gli da' il compose del server: senza la sua modalita' il brain giustamente non parte.
+        docker run -d --name prova-brain --network prova-avvio -e AI_BRAIN_MODE=server -e AI_BRAIN_DATA_DIR=/data \
+          -e AI_BRAIN_VERSION="$V" -e AI_BRAIN_PUBLIC_URL=http://localhost -e NEO4J_PASSWORD=prova-avvio-123 \
+          -e BRAIN_TOKEN=prova-avvio-token "ai-brain-server:$V" > /dev/null
         for i in $(seq 1 60); do docker exec prova-brain python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/health', timeout=3)" > /dev/null 2>&1 && break; sleep 5; done
         docker exec prova-brain python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8765/health', timeout=3)" || { docker logs --tail 60 prova-brain; echo "L'immagine $ARCH non parte"; exit 1; }
         docker rm -f prova-brain prova-grafo > /dev/null && docker network rm prova-avvio > /dev/null
