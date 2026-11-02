@@ -128,6 +128,9 @@ jobs:
         for f in codice/backend/app/integrita.py codice/backend/app/licenza.py; do
           [ -f "$f" ] && sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
         done
+        # Dalla 1.0.61 gli aggiornamenti hanno chiavi loro (principale e scorta): nel collaudo, quella di prova.
+        f=codice/backend/app/aggiornamenti.py
+        [ -f "$f" ] && sed -i "s/xPpqgamp9koyNeXOd2HxAgjIQeoIIRv6KabHLMTOnV4/$PUBBLICA/; s/WQnpInQs1EYt4ybJjXSohuf6KuIbSd6wVpwORy--Wi8/$PUBBLICA/" "$f"
         grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
       if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Modelli della ricerca (gli stessi dell'immagine del server, scaricati qui)
@@ -324,6 +327,9 @@ jobs:
         for f in codice/backend/app/integrita.py codice/backend/app/licenza.py; do
           [ -f "$f" ] && sed -i '' "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
         done
+        # Dalla 1.0.61 gli aggiornamenti hanno chiavi loro (principale e scorta): nel collaudo, quella di prova.
+        f=codice/backend/app/aggiornamenti.py
+        [ -f "$f" ] && sed -i '' "s/xPpqgamp9koyNeXOd2HxAgjIQeoIIRv6KabHLMTOnV4/$PUBBLICA/; s/WQnpInQs1EYt4ybJjXSohuf6KuIbSd6wVpwORy--Wi8/$PUBBLICA/" "$f"
         grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
       if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Node (quello dell'app) e pagine

@@ -701,3 +701,12 @@ def test_il_collaudo_del_server_usa_l_immagine_compilata_come_quella_pubblicata(
     costruzioni = [r for r in s.splitlines() if "docker build -f deploy/server/Dockerfile" in r]
     assert len(costruzioni) == 2
     assert all("--build-arg STRIP_SOURCES=1" in r for r in costruzioni)
+
+
+def test_il_collaudo_di_mac_e_windows_mette_la_chiave_di_prova_anche_negli_aggiornamenti():
+    """Dalla 1.0.61 l'app controlla gli aggiornamenti con chiavi sue (aggiornamenti.py): senza sostituirle con quella di
+    prova, l'aggiornamento di collaudo verrebbe rifiutato come non firmato."""
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
+    assert s.count("f=codice/backend/app/aggiornamenti.py") == 2
+    assert s.count("s/xPpqgamp9koyNeXOd2HxAgjIQeoIIRv6KabHLMTOnV4/$PUBBLICA/; s/WQnpInQs1EYt4ybJjXSohuf6KuIbSd6wVpwORy--Wi8/$PUBBLICA/") == 2
