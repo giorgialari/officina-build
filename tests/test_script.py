@@ -505,11 +505,12 @@ def test_windows_stampa_cosa_dicono_i_registri_della_versione_di_prima_sugli_agg
     s = (pathlib.Path(__file__).resolve().parent.parent / "scripts" / "collaudo-windows.ps1").read_text(encoding="utf-8")
     assert "NOTA log:" in s and "nessuna riga sugli aggiornamenti" in s
     assert s.index("NOTA log:") < s.index("NOTA: aggiornamento dall'app fermo.")
-def test_collaudo_aggiorna_dalla_1032_1033_e_1034():
+def test_collaudo_aggiorna_dalla_1060():
+    """Dal 2/11/2026 tutti i clienti sono alla 1.0.60: il collaudo prova solo l'aggiornamento da lì."""
     import json
 
     versioni = json.loads((Path(__file__).resolve().parents[1] / "versioni-in-uso.json").read_text())
-    assert versioni == ["1.0.32", "1.0.35", "1.0.37"]
+    assert versioni == ["1.0.60"]
 
 
 def test_il_collaudo_controlla_il_pulsante_sulla_pagina_rimasta_aperta():
