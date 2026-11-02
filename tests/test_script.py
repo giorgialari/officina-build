@@ -717,3 +717,13 @@ def test_il_rilascio_avvia_davvero_l_immagine_del_server_su_ogni_processore():
     import pathlib
     s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
     assert "8765/health" in s and "L'immagine $ARCH non parte" in s
+
+
+def test_il_collaudo_del_server_firma_le_impronte_delle_immagini_compilate():
+    """Le immagini compilate pretendono le impronte firmate: il collaudo le firma con la chiave di prova, la nuova e
+    quella di prima, prima di accendere il server (senza, il brain partiva «fermo» e non salvava le memorie)."""
+    import pathlib
+    s = (pathlib.Path(__file__).resolve().parent.parent / ".github" / "workflows" / "rilascio.yml").read_text(encoding="utf-8")
+    firma = s.index("    - name: Impronte firmate con la chiave di prova")
+    assert s.index("immagine-vecchia codice-vecchio") < firma < s.index("    - name: Il server si accende")
+    assert 'firma_immagine "$V" codice' in s and 'firma_immagine "$VV" codice-vecchio' in s

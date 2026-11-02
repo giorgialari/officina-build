@@ -495,6 +495,20 @@ jobs:
         VV=$(cat codice-vecchio/VERSION)
         echo "VV=$VV" >> "$GITHUB_ENV"
         scripts/riservato.sh immagine-vecchia codice-vecchio 'naming to|DONE' -- docker build -f deploy/server/Dockerfile --build-arg STRIP_SOURCES=1 --build-arg AI_BRAIN_VERSION="$VV" -t "ai-brain-server:$VV" .
+    - name: Impronte firmate con la chiave di prova (come fa il rilascio con quella vera)
+      run: |
+        # Le immagini compilate (STRIP_SOURCES=1) pretendono l'elenco delle impronte firmato, come quelle pubblicate:
+        # senza, il brain si accende «fermo». La chiave di prova e' gia' in ~/.config/ai-brain-licenze (passo licenza).
+        firma_immagine(){  # versione, cartella del codice
+          id=$(docker create "ai-brain-server:$1")
+          docker cp "$id:/app/impronte.json" "$RUNNER_TEMP/impronte-$1.json"
+          python3 "$2/backend/app/integrita.py" firma "$RUNNER_TEMP/impronte-$1.json" --versione "$1" --sistema server
+          docker cp "$RUNNER_TEMP/impronte-$1.json.firma" "$id:/app/impronte.json.firma"
+          docker commit "$id" "ai-brain-server:$1" > /dev/null && docker rm "$id" > /dev/null
+          echo "impronte della $1 firmate"
+        }
+        firma_immagine "$V" codice
+        if [ -n "${VV:-}" ]; then firma_immagine "$VV" codice-vecchio; fi
     - name: Il server si accende (la versione di prima se c'e', altrimenti la nuova)
       run: |
         cat > codice/deploy/server/.env <<EOF
