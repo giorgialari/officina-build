@@ -501,9 +501,10 @@ jobs:
         # senza, il brain si accende «fermo». La chiave di prova e' gia' in ~/.config/ai-brain-licenze (passo licenza).
         firma_immagine(){  # versione, cartella del codice
           id=$(docker create "ai-brain-server:$1")
-          docker cp "$id:/app/impronte.json" "$RUNNER_TEMP/impronte-$1.json"
-          python3 "$2/backend/app/integrita.py" firma "$RUNNER_TEMP/impronte-$1.json" --versione "$1" --sistema server
-          docker cp "$RUNNER_TEMP/impronte-$1.json.firma" "$id:/app/impronte.json.firma"
+          mkdir -p "$RUNNER_TEMP/impronte-$1"  # la firma esce accanto all'elenco, come impronte.json.firma
+          docker cp "$id:/app/impronte.json" "$RUNNER_TEMP/impronte-$1/impronte.json"
+          python3 "$2/backend/app/integrita.py" firma "$RUNNER_TEMP/impronte-$1/impronte.json" --versione "$1" --sistema server
+          docker cp "$RUNNER_TEMP/impronte-$1/impronte.json.firma" "$id:/app/impronte.json.firma"
           docker commit "$id" "ai-brain-server:$1" > /dev/null && docker rm "$id" > /dev/null
           echo "impronte della $1 firmate"
         }
