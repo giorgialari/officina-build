@@ -24,7 +24,18 @@ try:
         controlla(False, "un'email senza licenza viene rifiutata")
     except licenza.LicenseError:
         controlla(True, "un'email senza licenza viene rifiutata con la frase giusta")
-    stato = licenza.activate_email(dati, email, versione)
+    try:
+        stato = licenza.activate_email(dati, email, versione)
+    except licenza.ConfirmByEmail as conferma:
+        # Dal 30/10/2026 un computer nuovo si attiva solo dopo il bottone nell'email della licenza: il runner è sempre
+        # nuovo, quindi si aspetta il sì di chi riceve quell'email (al più 15 minuti, poi la prova è rossa).
+        import time
+        print("  ATTESA il servizio ha mandato l'email di conferma: premi il bottone (15 minuti)", flush=True)
+        fine, stato = time.time() + min(conferma.scade, 15 * 60), None
+        while stato is None and time.time() < fine:
+            time.sleep(10)
+            stato = licenza.poll_activation(dati, conferma.attesa, versione)
+        stato = stato or {"state": "nessuna conferma in 15 minuti"}
     controlla(stato.get("state") == "ok", f"l'attivazione con l'email funziona (stato {stato.get('state')})")
     controlla(licenza.status(dati, kind="computer")["state"] == "ok", "la chiave arrivata vale su questo computer")
     controlla(licenza.read_check(dati) is not None, "con la chiave arriva il primo controllo firmato")

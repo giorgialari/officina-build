@@ -819,7 +819,7 @@ jobs:
   licenza-vera:
     name: Licenza · attivazione con l'email e controllo periodico (servizio vero)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
     - uses: ./.github/actions/codice
