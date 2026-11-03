@@ -18,24 +18,30 @@ def controlla(ok, cosa):
     print(("  OK   " if ok else "  MALE ") + cosa)
     KO += 0 if ok else 1
 
+
+def attiva(cartella, email, **opzioni):
+    """activate_email, e se il servizio chiede il sì dall'email (computer nuovo, dal 30/10/2026) lo aspetta: al più 15
+    minuti, poi lo stato dice che non è arrivato."""
+    import time
+    try:
+        return licenza.activate_email(cartella, email, versione, **opzioni)
+    except licenza.ConfirmByEmail as conferma:
+        print(f"  ATTESA conferma via email per {email.split('@')[-1]} (15 minuti)", flush=True)
+        fine = time.time() + min(conferma.scade, 15 * 60)
+        while time.time() < fine:
+            time.sleep(10)
+            stato = licenza.poll_activation(cartella, conferma.attesa, versione, machine=opzioni.get("machine"))
+            if stato is not None:
+                return stato
+        return {"state": "nessuna conferma in 15 minuti"}
+
 try:
     try:
         licenza.activate_email(dati, "collaudo-senza-licenza@example.invalid", versione)
         controlla(False, "un'email senza licenza viene rifiutata")
     except licenza.LicenseError:
         controlla(True, "un'email senza licenza viene rifiutata con la frase giusta")
-    try:
-        stato = licenza.activate_email(dati, email, versione)
-    except licenza.ConfirmByEmail as conferma:
-        # Dal 30/10/2026 un computer nuovo si attiva solo dopo il bottone nell'email della licenza: il runner è sempre
-        # nuovo, quindi si aspetta il sì di chi riceve quell'email (al più 15 minuti, poi la prova è rossa).
-        import time
-        print("  ATTESA il servizio ha mandato l'email di conferma: premi il bottone (15 minuti)", flush=True)
-        fine, stato = time.time() + min(conferma.scade, 15 * 60), None
-        while stato is None and time.time() < fine:
-            time.sleep(10)
-            stato = licenza.poll_activation(dati, conferma.attesa, versione)
-        stato = stato or {"state": "nessuna conferma in 15 minuti"}
+    stato = attiva(dati, email)
     controlla(stato.get("state") == "ok", f"l'attivazione con l'email funziona (stato {stato.get('state')})")
     controlla(licenza.status(dati, kind="computer")["state"] == "ok", "la chiave arrivata vale su questo computer")
     controlla(licenza.read_check(dati) is not None, "con la chiave arriva il primo controllo firmato")
@@ -107,10 +113,10 @@ if os.environ.get("EMAIL_SERVER"):
     server = Path(tempfile.mkdtemp())
     macchina_server = "5E2A-0000-C011"
     try:
-        licenza.activate_email(computer, email_s, versione)
+        attiva(computer, email_s)
         codice_download = licenza.download_code(computer, fresh=True)
         controlla(str(codice_download.get("codice", "")).startswith("asc_"), "il computer ottiene il codice per scaricare il server")
-        stato = licenza.activate_email(server, email_s, versione, machine=macchina_server, kind="server", code=codice_download["codice"])
+        stato = attiva(server, email_s, machine=macchina_server, kind="server", code=codice_download["codice"])
         controlla(stato.get("state") == "ok", f"il posto server si attiva con email e codice (stato {stato.get('state')})")
         controlla(licenza.status(server, machine=macchina_server, kind="server")["state"] == "ok", "la chiave del server vale sul server")
         controlla(licenza.status(server, machine=macchina_server, kind="computer")["state"] != "ok", "la stessa chiave non vale come licenza di un computer")
