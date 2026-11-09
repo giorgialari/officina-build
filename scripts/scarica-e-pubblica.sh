@@ -2,6 +2,8 @@
 # Da lanciare SUL TUO MAC, a rilascio costruito: scarica gli allegati cifrati di una corsa di «Rilascio», li apre con la tua
 # chiave privata e lancia lo script di pubblicazione di sempre. E' l'unico passo che tocca il sito, e lo fai tu.
 #   scarica-e-pubblica.sh <numero della corsa> <cartella del codice di ai-brain>
+# Con MAC_DMG=<percorso del dmg> il Mac è quello costruito e firmato su questo Mac (firma Apple: il certificato sta solo
+# nel portachiavi di Giorgia), al posto di quello della corsa.
 set -eu
 corsa=$1; codice=$2
 chiave_privata="${REGISTRI_CHIAVE:-$HOME/.config/officina-build/registri.key}"
@@ -25,7 +27,7 @@ cd "$codice"
 # Prima il servizio delle licenze e il gestionale, alla stessa versione (dal 29/10/2026 escono con il brain). Se il servizio
 # nuovo non risponde con questa versione, sul server torna da solo quello di prima e qui ci si ferma: l'app non esce.
 bash deploy/licenze/installa.sh
-uv run --no-project --with cryptography python deploy/comune/pubblica.py --mac "$(ls "$lavoro"/rilascio-mac/*.dmg)" --windows "$(ls "$lavoro"/rilascio-windows/*.exe)" --note "$NOTE"
+uv run --no-project --with cryptography python deploy/comune/pubblica.py --mac "${MAC_DMG:-$(ls "$lavoro"/rilascio-mac/*.dmg)}" --windows "$(ls "$lavoro"/rilascio-windows/*.exe)" --note "$NOTE"
 uv run --no-project --with cryptography python deploy/comune/pubblica_server.py --versione "$V" \
   --amd64 "$(ls "$lavoro"/rilascio-server-amd64/*.tar)" --arm64 "$(ls "$lavoro"/rilascio-server-arm64/*.tar)"
 # Le rivendite sempre all'ultima versione (31/10/2026): rifà e ripubblica le immagini di quelle già sul sito. Se una non

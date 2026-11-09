@@ -364,6 +364,9 @@ jobs:
       env:
         AI_BRAIN_CHIAVE_LICENZE: ${{ github.workspace }}/chiave/chiave-privata.pem
         AI_BRAIN_PAGINE: ${{ runner.temp }}/pagine
+        # Dalla 1.0.63 il dmg di rilascio vuole la firma Apple, che qui (Mac di GitHub, chiave di prova) non c'è: il collaudo
+        # costruisce con la firma provvisoria. Il job «Rilascio · Mac firmato» non la mette mai. Le versioni di prima la ignorano.
+        AI_BRAIN_FIRMA_PROVVISORIA: '1'
       run: |
         pip3 install --quiet --break-system-packages cryptography 2>/dev/null || pip3 install --quiet cryptography
         # Le versioni di prima cercano la chiave sempre nello stesso posto: ce la mettiamo (quella di prova, di questa corsa)
