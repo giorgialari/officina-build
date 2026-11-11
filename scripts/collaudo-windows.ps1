@@ -350,7 +350,8 @@ if ($ConPulita) {
 function Scenario-Aggiornamento([string]$modo) {
     # La 1.0.32 usa il vecchio percorso; dalla 1.0.33 la cartella installata è Memdoria-AI-Brain.
     $verVecchia = [regex]::Match((Split-Path $Vecchio -Leaf), 'AI-Brain-([0-9.]+)-').Groups[1].Value
-    Richiedi ($verVecchia -in @('1.0.32', '1.0.33', '1.0.34', '1.0.35', '1.0.36', '1.0.37')) "la versione di partenza e' tra 1.0.32 e 1.0.37 (trovata $verVecchia)"
+    # Dalla 1.0.32 in poi (le piu' nuove hanno nomi e cartelle della 1.0.37).
+    Richiedi ($verVecchia -match '^1\.0\.(\d+)$' -and [int]$Matches[1] -ge 32) "la versione di partenza e' dalla 1.0.32 in poi (trovata $verVecchia)"
     $separata = $verVecchia -eq '1.0.32'
     $nomeVecchio = if ($separata) { 'Memdoria' } else { 'Memdoria-AI-Brain' }
     Say "B. Aggiornamento dalla $verVecchia, accesa ($modo)"

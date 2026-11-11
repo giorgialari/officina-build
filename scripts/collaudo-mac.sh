@@ -248,10 +248,13 @@ if [ "${SOLO_PULITA:-false}" != true ]; then
 say "B. Aggiornamento dall'app dalla versione di prima"
 # Le versioni distribuite usano tre nomi del bundle; dalla 1.0.33 i dati hanno lo stesso percorso.
 VER_V=$(basename "$VECCHIO" | sed -E 's/^AI-Brain-([0-9.]+)-.*/\1/')
-[ "$VER_V" = 1.0.32 ] || [ "$VER_V" = 1.0.33 ] || [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ] || [ "$VER_V" = 1.0.37 ] || { male "la versione di partenza deve essere 1.0.32|1.0.33|1.0.34|1.0.35|1.0.36|1.0.37, trovata $VER_V"; exit 1; }
+# Dalla 1.0.32 in poi: dalla 1.0.34 nomi e cartelle sono quelli della 1.0.37.
+VER_N=${VER_V##*.}
+case "$VER_V" in 1.0.[0-9]*) ;; *) VER_N=0 ;; esac
+[ "$VER_N" -ge 32 ] 2>/dev/null || { male "la versione di partenza deve essere dalla 1.0.32 in poi, trovata $VER_V"; exit 1; }
 NOME_V="Memdoria"
 [ "$VER_V" = 1.0.33 ] && NOME_V="Memdoria-AI-Brain"
-{ [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ] || [ "$VER_V" = 1.0.37 ]; } && NOME_V="Memdoria AI Brain"
+[ "$VER_N" -ge 34 ] && NOME_V="Memdoria AI Brain"
 APP_V="/Applications/$NOME_V.app"
 DATI_V="$SUPPORTO/Memdoria-AI-Brain"
 [ "$VER_V" = 1.0.32 ] && DATI_V="$SUPPORTO/Memdoria"
@@ -293,7 +296,7 @@ controlla_nome_dock; richiedi $? "dopo l'aggiornamento la prima apertura automat
 controlla_primo_avvio "$DATI_N"
 aspetta_lettura "$DATI_N"; richiedi $? "dopo l'aggiornamento la lettura finisce senza errori"
 wait "$PID_MOTORE"; controlla $? "Engine senza stato Errore durante la prima riapertura dopo $VER_V"
-if [ "$VER_V" = 1.0.34 ] || [ "$VER_V" = 1.0.35 ] || [ "$VER_V" = 1.0.36 ] || [ "$VER_V" = 1.0.37 ]; then
+if [ "$VER_N" -ge 34 ]; then
   [ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ]; controlla $? "dalla 1.0.34 conserva il nome senza trattini dopo l'aggiornamento"
 else
   [ -d "/Applications/Memdoria AI Brain.app" ] && [ ! -L "/Applications/Memdoria AI Brain.app" ] && [ -L /Applications/Memdoria-AI-Brain.app ] && [ -L /Applications/Memdoria.app ]; controlla $? "nome senza trattini nel Dock, con collegamenti per le versioni precedenti"
