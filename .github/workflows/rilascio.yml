@@ -150,12 +150,13 @@ jobs:
       run: |
         $ErrorActionPreference = 'Stop'
         $v = '1.4.363.0'
-        Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$v/windows/vulkansdk-windows-X64-$v.exe" -OutFile "$env:RUNNER_TEMP\vulkan.exe"
+        curl.exe -fsSL --retry 8 --retry-all-errors --retry-delay 15 -o "$env:RUNNER_TEMP\vulkan.exe" "https://sdk.lunarg.com/sdk/download/$v/windows/vulkansdk-windows-X64-$v.exe"
+        if ($LASTEXITCODE -ne 0) { Write-Host '::error::Vulkan SDK non scaricato'; exit 1 }
         Start-Process "$env:RUNNER_TEMP\vulkan.exe" -Wait -ArgumentList '--root', "C:\VulkanSDK\$v", '--accept-licenses', '--default-answer', '--confirm-command', 'install'
         if (-not (Test-Path "C:\VulkanSDK\$v\Bin\glslc.exe")) { Write-Host '::error::Vulkan SDK non installato'; exit 1 }
         "VULKAN_SDK=C:\VulkanSDK\$v" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
         "C:\VulkanSDK\$v\Bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
-      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
+      if: ${{ steps.inst.outputs.cache-hit != 'true' && matrix.nome == 'nuovo' }}
     - name: App e impronte
       shell: powershell
       working-directory: codice
@@ -576,7 +577,8 @@ jobs:
       run: |
         $ErrorActionPreference = 'Stop'
         $v = '1.4.363.0'
-        Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$v/windows/vulkansdk-windows-X64-$v.exe" -OutFile "$env:RUNNER_TEMP\vulkan.exe"
+        curl.exe -fsSL --retry 8 --retry-all-errors --retry-delay 15 -o "$env:RUNNER_TEMP\vulkan.exe" "https://sdk.lunarg.com/sdk/download/$v/windows/vulkansdk-windows-X64-$v.exe"
+        if ($LASTEXITCODE -ne 0) { Write-Host '::error::Vulkan SDK non scaricato'; exit 1 }
         Start-Process "$env:RUNNER_TEMP\vulkan.exe" -Wait -ArgumentList '--root', "C:\VulkanSDK\$v", '--accept-licenses', '--default-answer', '--confirm-command', 'install'
         if (-not (Test-Path "C:\VulkanSDK\$v\Bin\glslc.exe")) { Write-Host '::error::Vulkan SDK non installato'; exit 1 }
         "VULKAN_SDK=C:\VulkanSDK\$v" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV

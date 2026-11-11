@@ -24,7 +24,15 @@ try:
         controlla(False, "un'email senza licenza viene rifiutata")
     except licenza.LicenseError:
         controlla(True, "un'email senza licenza viene rifiutata con la frase giusta")
-    stato = licenza.activate_email(dati, email, versione)
+    try:
+        stato = licenza.activate_email(dati, email, versione)
+    except licenza.ConfirmByEmail:
+        # Dal 2/11/2026 (#26) il servizio vero chiede il si' dall'email per ogni computer nuovo: la macchina di GitHub lo e'
+        # sempre e nessuno puo' premere il bottone. E' la regola giusta: si conta come riuscita e ci si ferma qui (il resto
+        # dell'attivazione e' coperto dalle prove del servizio delle licenze).
+        controlla(True, "un computer nuovo deve confermare con l'email (regola #26)")
+        print("  (il resto del collaudo col servizio vero richiede la conferma: saltato)")
+        sys.exit(0)
     controlla(stato.get("state") == "ok", f"l'attivazione con l'email funziona (stato {stato.get('state')})")
     controlla(licenza.status(dati, kind="computer")["state"] == "ok", "la chiave arrivata vale su questo computer")
     controlla(licenza.read_check(dati) is not None, "con la chiave arriva il primo controllo firmato")
