@@ -100,7 +100,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: pronto
-        key: inst-win-${{ matrix.riferimento }}-${{ hashFiles('chiave-prova/pubblica.txt') }}-v1
+        key: inst-win-${{ matrix.riferimento }}-${{ hashFiles('chiave-prova/pubblica.txt') }}-v2
     - name: Codice (copia di sola lettura, chiave dedicata)
       env:
         CODICE_CHIAVE: ${{ secrets.CODICE_CHIAVE }}
@@ -312,7 +312,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: pronto
-        key: inst-mac-${{ matrix.riferimento }}-${{ hashFiles('chiave-prova/pubblica.txt') }}-v1
+        key: inst-mac-${{ matrix.riferimento }}-${{ hashFiles('chiave-prova/pubblica.txt') }}-v2
     - uses: ./.github/actions/codice
       with:
         riferimento: ${{ matrix.riferimento }}
@@ -355,6 +355,10 @@ jobs:
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
         test -x "$HOME/.local/bin/uv" && echo "uv pronto"
+      if: ${{ steps.inst.outputs.cache-hit != 'true' }}
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
       if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Modelli della ricerca
       run: |
@@ -671,6 +675,9 @@ jobs:
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
         test -x "$HOME/.local/bin/uv" && echo "uv pronto"
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
     - name: Modelli della ricerca
       run: |
         python3 -m pip install --quiet --break-system-packages "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0 2>/dev/null || python3 -m pip install --quiet "fastembed>=0.7.3,<0.8" onnxruntime==1.30.0
