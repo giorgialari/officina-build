@@ -128,6 +128,8 @@ jobs:
         for f in codice/backend/app/integrita.py codice/backend/app/licenza.py; do
           [ -f "$f" ] && sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
         done
+        # Dalla 1.0.61 l'elenco degli aggiornamenti ha anche la firma degli aggiornamenti: anche quella di prova.
+        f=codice/backend/app/aggiornamenti.py; [ -f "$f" ] && sed -i "s/WQnpInQs1EYt4ybJjXSohuf6KuIbSd6wVpwORy--Wi8/$PUBBLICA/" "$f"
         grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
       if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Modelli della ricerca (gli stessi dell'immagine del server, scaricati qui)
@@ -328,6 +330,8 @@ jobs:
         for f in codice/backend/app/integrita.py codice/backend/app/licenza.py; do
           [ -f "$f" ] && sed -i '' "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"
         done
+        # Dalla 1.0.61 l'elenco degli aggiornamenti ha anche la firma degli aggiornamenti: anche quella di prova.
+        f=codice/backend/app/aggiornamenti.py; [ -f "$f" ] && sed -i '' "s/WQnpInQs1EYt4ybJjXSohuf6KuIbSd6wVpwORy--Wi8/$PUBBLICA/" "$f"
         grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
       if: ${{ steps.inst.outputs.cache-hit != 'true' }}
     - name: Node (quello dell'app) e pagine
@@ -475,6 +479,7 @@ jobs:
         PUBBLICA: ${{ needs.win-chiavi.outputs.pubblica }}
       run: |
         for c in codice codice-vecchio; do for f in $c/backend/app/integrita.py $c/backend/app/licenza.py; do [ -f "$f" ] && sed -i "s/m_QL-tOfVLrSvzxol1xv06rGbLooUUh5YLFlwyOxHxw/$PUBBLICA/" "$f"; done; done
+        for c in codice codice-vecchio; do f=$c/backend/app/aggiornamenti.py; [ -f "$f" ] && sed -i "s/WQnpInQs1EYt4ybJjXSohuf6KuIbSd6wVpwORy--Wi8/$PUBBLICA/" "$f"; done
         grep -l "$PUBBLICA" codice/backend/app/*.py | wc -l
     - name: Licenza del server (firmata con la chiave di prova)
       run: |
