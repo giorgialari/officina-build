@@ -311,13 +311,9 @@ if ($ConPulita) {
     $fineAvvio = (Get-Date).AddSeconds(90)
     while (-not ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria') -and (Get-Date) -lt $fineAvvio) { Start-Sleep 5 }
     Controlla ((Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' | Out-String) -match 'Programs\\Memdoria-AI-Brain') 'avvio automatico verso la cartella nuova'
-    # Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti, la macchina e'' lenta)
-    $fineModello = (Get-Date).AddMinutes(20); $modello = $false
-    while ((Get-Date) -lt $fineModello -and -not $modello) {
-        Start-Sleep 20
-        $modello = @(Get-ChildItem "$dati\modello-locale" -Filter '*.mdc.ok' -ErrorAction SilentlyContinue).Count -gt 0
-    }
-    Controlla $modello 'Memdoria AI ha scaricato il suo modello'
+    # Il modello cifrato si scarica solo con una licenza vera: con quella di prova non deve arrivare.
+    Start-Sleep 120
+    Controlla (@(Get-ChildItem "$dati\modello-locale" -Filter '*.mdc' -ErrorAction SilentlyContinue).Count -eq 0) 'senza licenza vera il modello cifrato non si scarica'
     if ($modello) {
         $inizio = (Statistiche $dati).memories; $fineLavoro = (Get-Date).AddMinutes(10); $lavora = $false
         while ((Get-Date) -lt $fineLavoro -and -not $lavora) {
