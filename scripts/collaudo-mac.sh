@@ -219,7 +219,7 @@ collega_ai "$DATI"; controlla $? "collega le AI: la voce di Memdoria compare nei
 lingua_si_cambia "$DATI"; controlla $? "il cambio lingua (inglese e di nuovo italiano) si salva"
 # Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti)
 # Il modello cifrato si scarica solo con una licenza vera (indirizzo firmato del servizio): con quella di prova non deve arrivare.
-sleep 120; ! ls "$DATI"/modello-locale/*.mdc > /dev/null 2>&1; controlla $? "senza licenza vera il modello cifrato non si scarica"
+modello=1; sleep 120; ! ls "$DATI"/modello-locale/*.mdc > /dev/null 2>&1; controlla $? "senza licenza vera il modello cifrato non si scarica"
 if [ "$modello" = 0 ]; then
   inizio=$(conta "$DATI" memories); lavora=1
   for i in $(seq 1 30); do [ -f "$DATI/modello-locale/stato.json" ] || [ "$(conta "$DATI" memories)" -gt "${inizio:-0}" ] && { lavora=0; break; }; sleep 20; done
