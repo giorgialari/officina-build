@@ -290,7 +290,7 @@ if ($ConPulita) {
     Metti-Licenza $app $dati
     # Il modello di Memdoria AI (1,2 GB) arriva dalla cache della corsa, se c'e'; altrimenti lo scarica l'app e lo si tiene per la prossima.
     $cacheModello = "$env:RUNNER_TEMP\modello"
-    if (Test-Path "$cacheModello\*.gguf") { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
+    if (Test-Path "$cacheModello\*.mdc") { New-Item -ItemType Directory -Force "$dati\modello-locale" | Out-Null; Copy-Item "$cacheModello\*" "$dati\modello-locale" -Force; Write-Host "       modello preso dalla cache" }
     Seme-Connessione $dati
     Prepara-Feed-Pulsante
     Accendi $app
@@ -315,7 +315,7 @@ if ($ConPulita) {
     $fineModello = (Get-Date).AddMinutes(20); $modello = $false
     while ((Get-Date) -lt $fineModello -and -not $modello) {
         Start-Sleep 20
-        $modello = @(Get-ChildItem "$dati\modello-locale" -Filter '*.gguf.ok' -ErrorAction SilentlyContinue).Count -gt 0
+        $modello = @(Get-ChildItem "$dati\modello-locale" -Filter '*.mdc.ok' -ErrorAction SilentlyContinue).Count -gt 0
     }
     Controlla $modello 'Memdoria AI ha scaricato il suo modello'
     if ($modello) {
@@ -333,9 +333,9 @@ if ($ConPulita) {
     Controlla (Lingua-Si-Cambia $dati) 'il cambio lingua (inglese e di nuovo italiano) si salva'
     Pagina-Nel-Browser $dati 'installazione pulita'
     Controlla-Pulsante-Aggiornamento $dati
-    if ((Test-Path "$dati\modello-locale\*.gguf.ok") -and -not (Test-Path "$cacheModello\*.gguf")) {
+    if ((Test-Path "$dati\modello-locale\*.mdc.ok") -and -not (Test-Path "$cacheModello\*.mdc")) {
         New-Item -ItemType Directory -Force $cacheModello | Out-Null
-        Copy-Item "$dati\modello-locale\*.gguf*" $cacheModello -Force
+        Copy-Item "$dati\modello-locale\*.mdc*" $cacheModello -Force
         Write-Host "       modello salvato per la prossima volta"
     }
     Disinstalla-Tutto

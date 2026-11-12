@@ -204,7 +204,7 @@ monta_e_copia "$NUOVO" "Memdoria AI Brain.app"; controlla $? "Memdoria AI Brain.
 DATI="$SUPPORTO/Memdoria-AI-Brain"
 licenza "/Applications/Memdoria AI Brain.app" "$DATI"
 CACHE_MODELLO="$RUNNER_TEMP/modello"
-if ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then mkdir -p "$DATI/modello-locale" && cp "$CACHE_MODELLO"/* "$DATI/modello-locale/" && echo "       modello preso dalla cache"; fi
+if ls "$CACHE_MODELLO"/*.mdc > /dev/null 2>&1; then mkdir -p "$DATI/modello-locale" && cp "$CACHE_MODELLO"/* "$DATI/modello-locale/" && echo "       modello preso dalla cache"; fi
 seme_connessione "$DATI"
 prepara_feed_pulsante; richiedi $? "elenco di prova preparato per il pulsante degli aggiornamenti"
 accendi "/Applications/Memdoria AI Brain.app/Contents/MacOS/Memdoria" nuova
@@ -219,7 +219,7 @@ collega_ai "$DATI"; controlla $? "collega le AI: la voce di Memdoria compare nei
 lingua_si_cambia "$DATI"; controlla $? "il cambio lingua (inglese e di nuovo italiano) si salva"
 # Memdoria AI: scarica il suo modello e lavora (fino a 20 minuti)
 modello=1
-for i in $(seq 1 60); do ls "$DATI"/modello-locale/*.gguf.ok > /dev/null 2>&1 && { modello=0; break; }; sleep 20; done
+for i in $(seq 1 60); do ls "$DATI"/modello-locale/*.mdc.ok > /dev/null 2>&1 && { modello=0; break; }; sleep 20; done
 controlla $modello "Memdoria AI ha scaricato il suo modello"
 if [ "$modello" = 0 ]; then
   inizio=$(conta "$DATI" memories); lavora=1
@@ -228,8 +228,8 @@ if [ "$modello" = 0 ]; then
 fi
 pagina_nel_browser "$DATI" "installazione pulita"
 controlla_pulsante_aggiornamento "$DATI"
-if ls "$DATI"/modello-locale/*.gguf.ok > /dev/null 2>&1 && ! ls "$CACHE_MODELLO"/*.gguf > /dev/null 2>&1; then
-  mkdir -p "$CACHE_MODELLO" && cp "$DATI"/modello-locale/*.gguf* "$CACHE_MODELLO"/ && echo "       modello salvato per la prossima volta"
+if ls "$DATI"/modello-locale/*.mdc.ok > /dev/null 2>&1 && ! ls "$CACHE_MODELLO"/*.mdc > /dev/null 2>&1; then
+  mkdir -p "$CACHE_MODELLO" && cp "$DATI"/modello-locale/*.mdc* "$CACHE_MODELLO"/ && echo "       modello salvato per la prossima volta"
 fi
 # Disinstallazione (come «Disinstalla Memdoria» nella pagina): programmi spenti, dati tolti, voci delle AI tolte
 echo '{"dati": true, "backup": false}' > "$DATI/disinstalla.request"
